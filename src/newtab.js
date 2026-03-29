@@ -169,7 +169,12 @@ function setupYearProgress() {
   }
   
   if (pctEl) {
-    pctEl.innerHTML = `${progress.toFixed(1)}% <small>completado</small>`;
+    pctEl.textContent = '';
+    const main = document.createTextNode(progress.toFixed(1) + '% ');
+    const small = document.createElement('small');
+    small.textContent = 'completado';
+    pctEl.appendChild(main);
+    pctEl.appendChild(small);
   }
   
   if (daysPassedEl) daysPassedEl.textContent = daysPassed;
@@ -283,18 +288,20 @@ function createRateCard(currency, rate, change, meta, unit) {
   const sizeClass = getRateSizeClass(rate);
   const arrow = change === 'up' ? '▲' : change === 'down' ? '▼' : '—';
   
-  card.innerHTML = `
-    <div class="rcard-top">
-      <span class="rcard-sym">${currency}</span>
-      <span class="rcard-ico">${meta.flag}</span>
-    </div>
-    <div class="rcard-val ${sizeClass}">${formatRate(rate)}</div>
-    <div class="rcard-unit">${unit}</div>
-    <div class="rcard-bot">
-      <span class="rcard-name">${meta.name}</span>
-      <span class="rcard-pct">${arrow}</span>
-    </div>
-  `;
+  const top = document.createElement('div'); top.className = 'rcard-top';
+  const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = currency;
+  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.flag;
+  top.appendChild(sym); top.appendChild(ico);
+
+  const val = document.createElement('div'); val.className = `rcard-val ${sizeClass}`; val.textContent = formatRate(rate);
+  const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = unit;
+
+  const bot = document.createElement('div'); bot.className = 'rcard-bot';
+  const name = document.createElement('span'); name.className = 'rcard-name'; name.textContent = meta.name;
+  const pct = document.createElement('span'); pct.className = 'rcard-pct'; pct.textContent = arrow;
+  bot.appendChild(name); bot.appendChild(pct);
+
+  card.appendChild(top); card.appendChild(val); card.appendChild(unitEl); card.appendChild(bot);
   
   return card;
 }
@@ -321,24 +328,27 @@ function renderBinanceTicker() {
   
   const currencies = Object.keys(binanceRates);
   if (currencies.length === 0) return;
-  
-  const itemsHtml = currencies.map(cur => {
-    const rate = binanceRates[cur];
-    if (!rate) return '';
-    
-    // Binance rates are in USDT, show as crypto/USDT
-    return `<span class="ti bnc">` +
-      `<span class="tsrc">Binance</span>` +
-      `<span class="tcur">${cur}</span>` +
-      `<span class="tval">${rate.toFixed(2)}</span>` +
-      `<span class="tunit">USDT</span>` +
-      `</span><span class="tsep">·</span>`;
-  }).join('');
-  
-  if (!itemsHtml.trim()) return;
-  
-  // Duplicate for seamless loop
-  strip.innerHTML = itemsHtml + itemsHtml;
+
+  function makeItem(cur, rate) {
+    const wrap = document.createElement('span'); wrap.className = 'ti bnc';
+    const src = document.createElement('span'); src.className = 'tsrc'; src.textContent = 'Binance';
+    const curEl = document.createElement('span'); curEl.className = 'tcur'; curEl.textContent = cur;
+    const valEl = document.createElement('span'); valEl.className = 'tval'; valEl.textContent = rate.toFixed(2);
+    const unit = document.createElement('span'); unit.className = 'tunit'; unit.textContent = 'USDT';
+    wrap.appendChild(src); wrap.appendChild(curEl); wrap.appendChild(valEl); wrap.appendChild(unit);
+    const sep = document.createElement('span'); sep.className = 'tsep'; sep.textContent = '·';
+    return [wrap, sep];
+  }
+
+  const valid = currencies.filter(cur => binanceRates[cur]);
+  if (!valid.length) return;
+
+  strip.textContent = '';
+  for (let pass = 0; pass < 2; pass++) {
+    for (const cur of valid) {
+      makeItem(cur, binanceRates[cur]).forEach(el => strip.appendChild(el));
+    }
+  }
   
   // Calculate animation duration based on content length
   const totalChars = currencies.length * 20; // Approx chars per item

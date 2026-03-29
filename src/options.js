@@ -123,24 +123,32 @@ async function renderCurrenciesList() {
   availableCurrencies = loadedCurrencies.length > 0 ? loadedCurrencies : PREFERRED_ORDER;
   
   const selected = settings.selectedCurrencies || [];
-  
-  container.innerHTML = availableCurrencies.map(currency => {
+
+  container.textContent = '';
+  for (const currency of availableCurrencies) {
     const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
     const isSelected = selected.length === 0 || selected.includes(currency);
-    
-    return `
-      <div class="currency-item ${isSelected ? 'selected' : ''}" data-currency="${currency}">
-        <div class="currency-left">
-          <span class="currency-flag">${meta.flag}</span>
-          <div>
-            <div class="currency-code">${currency}</div>
-            <div class="currency-name">${meta.name}</div>
-          </div>
-        </div>
-        <input type="checkbox" class="currency-checkbox" ${isSelected ? 'checked' : ''}>
-      </div>
-    `;
-  }).join('');
+
+    const item = document.createElement('div');
+    item.className = 'currency-item' + (isSelected ? ' selected' : '');
+    item.dataset.currency = currency;
+
+    const left = document.createElement('div'); left.className = 'currency-left';
+    const flag = document.createElement('span'); flag.className = 'currency-flag'; flag.textContent = meta.flag;
+    const info = document.createElement('div');
+    const code = document.createElement('div'); code.className = 'currency-code'; code.textContent = currency;
+    const name = document.createElement('div'); name.className = 'currency-name'; name.textContent = meta.name;
+    info.appendChild(code); info.appendChild(name);
+    left.appendChild(flag); left.appendChild(info);
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'currency-checkbox';
+    checkbox.checked = isSelected;
+
+    item.appendChild(left); item.appendChild(checkbox);
+    container.appendChild(item);
+  }
   
   // Add click listeners
   container.querySelectorAll('.currency-item').forEach(item => {

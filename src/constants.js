@@ -91,5 +91,10 @@ export function log(message, type = 'INFO') {
   console.log(`[${timestamp}] [${type}] ${message}`);
 }
 
-// Cross-browser API wrapper
-export const browser = globalThis.browser || chrome;
+// Cross-browser API wrapper (Firefox MV3)
+// Se define como función para evitar ReferenceError si chrome no existe
+export const browser = (() => {
+  if (typeof globalThis.browser !== 'undefined') return globalThis.browser;
+  if (typeof globalThis.chrome !== 'undefined') return globalThis.chrome;
+  throw new Error('No browser API found');
+})();

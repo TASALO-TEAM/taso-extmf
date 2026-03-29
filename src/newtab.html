@@ -11,7 +11,7 @@
 <body>
 
 <script type="module">
-const browser = globalThis.browser || chrome;
+const browser = globalThis.browser ?? globalThis.chrome;
 
 async function init() {
   try {

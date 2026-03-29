@@ -175,17 +175,38 @@ function renderGrid() {
     card.className = `rate-card ${change}`;
     card.title = `${meta.name} · ${cur} en pesos cubanos`;
 
-    card.innerHTML = `
-      <div class="rate-top">
-        <span class="rate-cur">${cur}</span>
-        ${showFlags ? `<span class="rate-flag">${meta.flag}</span>` : ''}
-      </div>
-      <div class="rate-val" style="font-size:${fontSize + 4}px">${fmtRate(val)}</div>
-      <div class="rate-bot">
-        <span class="rate-name">${meta.name}</span>
-        <span class="rate-diff">${arrow}${diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : ''}</span>
-      </div>
-    `;
+    const top = document.createElement('div');
+    top.className = 'rate-top';
+    const curSpan = document.createElement('span');
+    curSpan.className = 'rate-cur';
+    curSpan.textContent = cur;
+    top.appendChild(curSpan);
+    if (showFlags) {
+      const flagSpan = document.createElement('span');
+      flagSpan.className = 'rate-flag';
+      flagSpan.textContent = meta.flag;
+      top.appendChild(flagSpan);
+    }
+
+    const valDiv = document.createElement('div');
+    valDiv.className = 'rate-val';
+    valDiv.style.fontSize = (fontSize + 4) + 'px';
+    valDiv.textContent = fmtRate(val);
+
+    const bot = document.createElement('div');
+    bot.className = 'rate-bot';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'rate-name';
+    nameSpan.textContent = meta.name;
+    const diffSpan = document.createElement('span');
+    diffSpan.className = 'rate-diff';
+    diffSpan.textContent = arrow + (diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : '');
+    bot.appendChild(nameSpan);
+    bot.appendChild(diffSpan);
+
+    card.appendChild(top);
+    card.appendChild(valDiv);
+    card.appendChild(bot);
     grid.appendChild(card);
   }
 }
@@ -198,30 +219,40 @@ function renderTicker() {
   // Usar monedas configuradas o default
   const currencies = settings.tickerCurrencies || DEFAULT_BINANCE_CURRENCIES;
 
+  function makeTickerEmpty(msg) {
+    strip.textContent = '';
+    const s = document.createElement('span');
+    s.style.cssText = 'padding:0 16px;font-size:9px;color:var(--text3);font-family:var(--mono)';
+    s.textContent = msg;
+    strip.appendChild(s);
+  }
+
   if (Object.keys(binanceRates).length === 0) {
-    strip.innerHTML = '<span style="padding:0 16px;font-size:9px;color:var(--text3);font-family:var(--mono)">Sin datos de Binance</span>';
+    makeTickerEmpty('Sin datos de Binance');
     return;
   }
 
-  const itemsHtml = currencies
-    .filter(cur => binanceRates[cur] !== undefined)
-    .map(cur => {
-      const rate = binanceRates[cur];
-      return `<span class="t-item bnc">` +
-        `<span class="t-cur">${cur}</span>` +
-        `<span class="t-val">${rate.toFixed(2)}</span>` +
-        `<span class="t-unit">USDT</span>` +
-        `</span><span class="tsep">·</span>`;
-    })
-    .join('');
-
-  if (!itemsHtml) {
-    strip.innerHTML = '<span style="padding:0 16px;font-size:9px;color:var(--text3);font-family:var(--mono)">Sin datos</span>';
-    return;
+  function makeTickerItem(cur, rate) {
+    const wrap = document.createElement('span');
+    wrap.className = 't-item bnc';
+    const curEl = document.createElement('span'); curEl.className = 't-cur'; curEl.textContent = cur;
+    const valEl = document.createElement('span'); valEl.className = 't-val'; valEl.textContent = rate.toFixed(2);
+    const unitEl = document.createElement('span'); unitEl.className = 't-unit'; unitEl.textContent = 'USDT';
+    wrap.appendChild(curEl); wrap.appendChild(valEl); wrap.appendChild(unitEl);
+    const sep = document.createElement('span'); sep.className = 'tsep'; sep.textContent = '·';
+    return [wrap, sep];
   }
 
-  // Duplicate for seamless loop
-  strip.innerHTML = itemsHtml + itemsHtml;
+  const filtered = currencies.filter(cur => binanceRates[cur] !== undefined);
+  if (!filtered.length) { makeTickerEmpty('Sin datos'); return; }
+
+  strip.textContent = '';
+  // Duplicate items for seamless loop
+  for (let pass = 0; pass < 2; pass++) {
+    for (const cur of filtered) {
+      makeTickerItem(cur, binanceRates[cur]).forEach(el => strip.appendChild(el));
+    }
+  }
 
   // Calculate animation duration
   const duration = Math.max(15, currencies.length * 0.4);

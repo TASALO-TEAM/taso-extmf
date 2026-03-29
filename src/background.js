@@ -3,6 +3,9 @@
 //  Sin imports - todo en un archivo
 // ═══════════════════════════════════════════════
 
+// Cross-browser API
+const browser = globalThis.browser ?? globalThis.chrome;
+
 // Constants inline (sin imports)
 const DEFAULT_API_URL = 'https://tasalo.duckdns.org';
 const ALARMS = { REFRESH: 'tasalo-refresh', ROTATE: 'tasalo-rotate' };
