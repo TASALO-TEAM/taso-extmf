@@ -2,8 +2,9 @@
 
 > Tasas de cambio Cuba en Firefox — El Toque, BCC, Binance
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/TASALO-TEAM/taso-extmf)
-[![Firefox](https://img.shields.io/badge/Firefox-109+-orange.svg)](https://www.mozilla.org/firefox/)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/TASALO-TEAM/taso-extmf)
+[![Firefox](https://img.shields.io/badge/Firefox-140+-orange.svg)](https://www.mozilla.org/firefox/)
+[![Download](https://img.shields.io/badge/download-.xpi-green.svg)](https://addons.mozilla.org/firefox/downloads/file/4744333/8ece6f5e86fe4a068649-0.1.0.xpi)
 
 ## 🦊 Exclusiva para Firefox
 
@@ -20,6 +21,16 @@ Esta es la versión **exclusiva para Firefox** de la extensión TASALO.
 
 ## 📦 Instalación en Firefox
 
+### Descarga Directa (.xpi)
+
+1. **Descargar:** [TASALO v0.1.0 (.xpi)](https://addons.mozilla.org/firefox/downloads/file/4744333/8ece6f5e86fe4a068649-0.1.0.xpi)
+2. Abrir Firefox
+3. Ir a `about:addons`
+4. Click en la rueda dentada ⚙️
+5. **"Install Add-on From File..."**
+6. Seleccionar el archivo `.xpi` descargado
+7. ✅ ¡Listo!
+
 ### Desarrollo
 
 1. Abrí Firefox
@@ -28,10 +39,6 @@ Esta es la versión **exclusiva para Firefox** de la extensión TASALO.
 4. Navegá a `/home/ersus/tasalo/taso-extmf/`
 5. Seleccioná `manifest.json`
 6. ✅ ¡Listo!
-
-### Producción (AMO)
-
-Próximamente en [Firefox Add-ons](#)
 
 ## 🚀 Uso
 
