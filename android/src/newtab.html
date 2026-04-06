@@ -15,21 +15,29 @@ const browser = globalThis.browser ?? globalThis.chrome;
 
 async function init() {
   try {
+    // Load settings first
     const data = await browser.storage.local.get('settings');
     const settings = data.settings || {};
-
+    
+    // Check if new tab is DISABLED
     if (settings.newTabEnabled === false) {
+      // Redirect to Google
       browser.tabs.create({url: 'https://www.google.com'});
+      // Close current tab
       browser.tabs.getCurrent((tab) => {
         if (tab) browser.tabs.remove(tab.id);
       });
       return;
     }
+    
+    // New tab is ENABLED - continue loading normally
+    // Nothing to do, just let the page load
   } catch (error) {
     console.error('[NewTab] Error:', error);
   }
 }
 
+// Start
 init();
 </script>
 
@@ -169,9 +177,9 @@ init();
 
   <!-- Footer -->
   <div id="foot">
-    <span>TASALO v0.1.6.3</span>
+    <span>TASALO v0.1.0</span>
     <span class="fdot"></span>
-    <span>Tasas del mercado Informal y Oficial cubano. <i>(Una extencion creada por ersus93)</i></span>
+    <span>Tasas del mercado informal cubano</span>
     <span class="fdot"></span>
     <a href="#" id="refreshLink">🔄 Actualizar</a>
   </div>

@@ -4,7 +4,8 @@
 
 [![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/TASALO-TEAM/taso-extmf)
 [![Firefox](https://img.shields.io/badge/Firefox-140+-orange.svg)](https://www.mozilla.org/firefox/)
-[![Download](https://img.shields.io/badge/download-.xpi-green.svg)](https://addons.mozilla.org/firefox/downloads/file/4744333/8ece6f5e86fe4a068649-0.1.0.xpi)
+[![Mozilla addons full](https://img.shields.io/badge/download-.xpi-green.svg)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-tasas-de-cambio-cuba/)
+[![Mozilla addons small](https://img.shields.io/badge/download-.xpi-green.svg)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-cambio-cuba-android/)
 
 ## 🦊 Exclusiva para Firefox
 

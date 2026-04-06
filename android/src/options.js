@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════
-//  TASALO — Options Page v1.5
+//  TASALO — Options Page v1
 //  Configuración simple y plug & play
-//  Con imports ES6 (type="module" en HTML)
 // ═══════════════════════════════════════════════
 
 import { DEFAULT_SETTINGS, CURRENCY_META, PREFERRED_ORDER, browser } from './constants.js';
@@ -124,7 +123,6 @@ async function renderCurrenciesList() {
   availableCurrencies = loadedCurrencies.length > 0 ? loadedCurrencies : PREFERRED_ORDER;
   
   const selected = settings.selectedCurrencies || [];
-
 
   container.textContent = '';
   for (const currency of availableCurrencies) {

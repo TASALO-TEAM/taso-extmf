@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════
-//  TASALO — New Tab Page v1.5
+//  TASALO — New Tab Page v1
 //  Liquid Glass con dos paneles (ElToque + BCC)
-//  Con imports ES6 (type="module" en HTML) + Error handling
 // ═══════════════════════════════════════════════
 
 import { PREFERRED_ORDER, CURRENCY_META, PRODUCTION_API_URL, browser } from './constants.js';
@@ -13,46 +12,23 @@ let binanceRates = {};
 let settings = {};
 
 // ═══════════════════════════════════════════════
-//  Init - CON MANEJO DE ERRORES ROBUSTO
+//  Init
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    console.log('[NewTab] DOMContentLoaded - starting init');
-    
-    await loadSettings();
-    console.log('[NewTab] Settings loaded:', settings);
-    
-    setupTheme();
-    console.log('[NewTab] Theme setup done');
-    
-    setupClock();
-    console.log('[NewTab] Clock setup done');
-    
-    setupSearch();
-    console.log('[NewTab] Search setup done');
-    
-    setupYearProgress();
-    console.log('[NewTab] Year progress setup done');
-    
-    await loadRates();
-    console.log('[NewTab] Rates loaded');
-    
-    setupRefresh();
-    console.log('[NewTab] Refresh setup done');
-
-    // Escuchar cambios en storage
-    browser.storage.onChanged.addListener((changes) => {
-      console.log('[NewTab] Storage changed:', Object.keys(changes));
-      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.bccRates) {
-        loadRates();
-      }
-    });
-    
-    console.log('[NewTab] ✅ Initialization complete');
-  } catch (error) {
-    console.error('[NewTab] ❌ Initialization error:', error);
-    console.error('[NewTab] Stack:', error.stack);
-  }
+  await loadSettings();
+  setupTheme();
+  setupClock();
+  setupSearch();
+  setupYearProgress();
+  await loadRates();
+  setupRefresh();
+  
+  // Escuchar cambios en storage
+  browser.storage.onChanged.addListener((changes) => {
+    if (changes.currentRates || changes.rateChanges) {
+      loadRates();
+    }
+  });
 });
 
 async function loadSettings() {
@@ -61,51 +37,37 @@ async function loadSettings() {
 }
 
 function setupTheme() {
-  try {
-    const theme = settings.colorBg || 'auto';
-    applyTheme(theme);
-
-    // Theme toggle buttons
-    const themeBtns = document.querySelectorAll('.theme-btn');
-    if (!themeBtns || themeBtns.length === 0) {
-      console.warn('[NewTab] No theme buttons found');
-      return;
-    }
-    
-    themeBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        applyTheme(btn.dataset.theme);
-
-        // Guardar preferencia
-        settings.colorBg = btn.dataset.theme;
-        browser.storage.local.set({ settings });
-      });
+  const theme = settings.colorBg || 'auto';
+  applyTheme(theme);
+  
+  // Theme toggle buttons
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyTheme(btn.dataset.theme);
+      
+      // Guardar preferencia
+      settings.colorBg = btn.dataset.theme;
+      browser.storage.local.set({ settings });
     });
-  } catch (error) {
-    console.error('[NewTab] Error in setupTheme:', error);
-  }
+  });
 }
 
 function applyTheme(theme) {
-  try {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('light');
+  if (theme === 'dark') {
+    document.documentElement.classList.add('light');
+    document.documentElement.classList.remove('light');
+  } else if (theme === 'light') {
+    document.documentElement.classList.add('light');
+  } else {
+    // Auto - usar preferencia del sistema
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (prefersDark) {
       document.documentElement.classList.remove('light');
-    } else if (theme === 'light') {
-      document.documentElement.classList.add('light');
     } else {
-      // Auto - usar preferencia del sistema
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) {
-        document.documentElement.classList.remove('light');
-      } else {
-        document.documentElement.classList.add('light');
-      }
+      document.documentElement.classList.add('light');
     }
-  } catch (error) {
-    console.error('[NewTab] Error in applyTheme:', error);
   }
 }
 
@@ -208,10 +170,11 @@ function setupYearProgress() {
   
   if (pctEl) {
     pctEl.textContent = '';
-    pctEl.appendChild(document.createTextNode(progress.toFixed(1) + '% '));
-    const smallEl = document.createElement('small');
-    smallEl.textContent = 'completado';
-    pctEl.appendChild(smallEl);
+    const main = document.createTextNode(progress.toFixed(1) + '% ');
+    const small = document.createElement('small');
+    small.textContent = 'completado';
+    pctEl.appendChild(main);
+    pctEl.appendChild(small);
   }
   
   if (daysPassedEl) daysPassedEl.textContent = daysPassed;
@@ -241,22 +204,15 @@ async function loadRates() {
       'currentRates', 
       'rateChanges', 
       'binanceRates',
-      'lastUpdated',
-      'eltoqueRates',
-      'bccRates',
-      'cadecaRates'
+      'lastUpdated'
     ]);
     
     currentRates = data.currentRates || {};
     rateChanges = data.rateChanges || {};
     binanceRates = data.binanceRates || {};
     
-    // Use source-specific rates for each panel
-    const eltoqueRates = data.eltoqueRates || {};
-    const bccRates = data.bccRates || {};
-
-    renderElToquePanel(eltoqueRates);
-    renderBccPanel(bccRates);
+    renderElToquePanel();
+    renderBccPanel();
     renderBinanceTicker();
     
   } catch (error) {
@@ -264,7 +220,7 @@ async function loadRates() {
   }
 }
 
-function renderElToquePanel(eltoqueRates) {
+function renderElToquePanel() {
   const grid = document.getElementById('eltoqueGrid');
   if (!grid) return;
   
@@ -274,11 +230,12 @@ function renderElToquePanel(eltoqueRates) {
   grid.innerHTML = '';
   
   for (const currency of eltoqueCurrencies) {
-    const rate = eltoqueRates[currency];
+    const rate = currentRates[currency];
     if (rate === undefined) continue;
     
     const change = rateChanges[currency] || 'neutral';
     const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
+    const prev = currentRates[`${currency}_prev`]; // Previous rate for comparison
     
     const card = createRateCard(currency, rate, change, meta, 'CUP');
     grid.appendChild(card);
@@ -287,14 +244,14 @@ function renderElToquePanel(eltoqueRates) {
   // Update timestamp
   const updEl = document.getElementById('eltoqueUpd');
   if (updEl) {
-    updEl.textContent = new Date().toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit'
+    updEl.textContent = new Date().toLocaleTimeString('es-CU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
     });
   }
 }
 
-function renderBccPanel(bccRates) {
+function renderBccPanel() {
   const grid = document.getElementById('bccGrid');
   if (!grid) return;
   
@@ -304,7 +261,7 @@ function renderBccPanel(bccRates) {
   grid.innerHTML = '';
   
   for (const currency of bccCurrencies) {
-    const rate = bccRates[currency];
+    const rate = currentRates[currency];
     if (rate === undefined) continue;
     
     const change = rateChanges[currency] || 'neutral';
@@ -317,9 +274,9 @@ function renderBccPanel(bccRates) {
   // Update timestamp
   const updEl = document.getElementById('bccUpd');
   if (updEl) {
-    updEl.textContent = new Date().toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit'
+    updEl.textContent = new Date().toLocaleTimeString('es-CU', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
     });
   }
 }
@@ -336,7 +293,7 @@ function createRateCard(currency, rate, change, meta, unit) {
   const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.flag;
   top.appendChild(sym); top.appendChild(ico);
 
-  const val = document.createElement('div'); val.className = 'rcard-val ' + sizeClass; val.textContent = formatRate(rate);
+  const val = document.createElement('div'); val.className = `rcard-val ${sizeClass}`; val.textContent = formatRate(rate);
   const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = unit;
 
   const bot = document.createElement('div'); bot.className = 'rcard-bot';
@@ -377,8 +334,8 @@ function renderBinanceTicker() {
     const src = document.createElement('span'); src.className = 'tsrc'; src.textContent = 'Binance';
     const curEl = document.createElement('span'); curEl.className = 'tcur'; curEl.textContent = cur;
     const valEl = document.createElement('span'); valEl.className = 'tval'; valEl.textContent = rate.toFixed(2);
-    const unitEl = document.createElement('span'); unitEl.className = 'tunit'; unitEl.textContent = 'USDT';
-    wrap.appendChild(src); wrap.appendChild(curEl); wrap.appendChild(valEl); wrap.appendChild(unitEl);
+    const unit = document.createElement('span'); unit.className = 'tunit'; unit.textContent = 'USDT';
+    wrap.appendChild(src); wrap.appendChild(curEl); wrap.appendChild(valEl); wrap.appendChild(unit);
     const sep = document.createElement('span'); sep.className = 'tsep'; sep.textContent = '·';
     return [wrap, sep];
   }
@@ -386,7 +343,6 @@ function renderBinanceTicker() {
   const valid = currencies.filter(cur => binanceRates[cur]);
   if (!valid.length) return;
 
-  // Duplicate for seamless loop, built entirely with DOM (no innerHTML)
   strip.textContent = '';
   for (let pass = 0; pass < 2; pass++) {
     for (const cur of valid) {

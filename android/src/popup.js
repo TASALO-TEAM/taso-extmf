@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════
-//  TASALO — Popup Firefox Desktop v0.1.6.0
-//  COPIA EXACTA de Android + source switch
+//  TASALO — Popup Android
+//  Sin omnibox, sin newtab, sin options_ui
+//  Los ajustes se muestran inline en el popup
 // ═══════════════════════════════════════════════
 
 import { PREFERRED_ORDER, CURRENCY_META, browser } from './constants.js';
@@ -11,6 +12,7 @@ let rateChanges = {};
 let previousRates = {};
 let binanceRates = {};
 let tickerOpen = false;
+let settingsOpen = false;
 let listenersAttached = false;
 
 const DEFAULT_BINANCE_CURRENCIES = [
@@ -39,7 +41,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTheme();
   applyColors();
   renderAll();
-  renderSourceSwitch();
   attachListeners();
 });
 
@@ -60,6 +61,7 @@ async function loadData() {
   } else if (data.eltoqueRates && Object.keys(data.eltoqueRates).length > 0) {
     currentRates = data.eltoqueRates;
   } else {
+    // fallback: usar currentRates genérico si aún no hay datos por fuente
     currentRates = data.currentRates ?? {};
   }
 
@@ -145,54 +147,6 @@ function getSortedCurrencies() {
   });
 
   return selected.length > 0 ? sorted.filter(c => selected.includes(c)) : sorted;
-}
-
-// ── Source Switch ─────────────────────────────────
-function renderSourceSwitch() {
-  const currentSource = getSourcePreference();
-  const sourceBtns = document.querySelectorAll('.source-btn');
-
-  sourceBtns.forEach(btn => {
-    const source = btn.dataset.source;
-    if (source === currentSource) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
-
-  const footerSource = document.querySelector('.footer-source');
-  if (footerSource) {
-    const sourceNames = {
-      'eltoque': 'El Toque (Informal)',
-      'bcc': 'BCC (Oficial)',
-      'cadeca': 'CADECA'
-    };
-    const sourceName = sourceNames[currentSource] || 'El Toque (Informal)';
-    // Use DOM instead of innerHTML to avoid security warning
-    footerSource.textContent = '';
-    const dot = document.createElement('span');
-    dot.className = 'footer-dot';
-    footerSource.appendChild(dot);
-    footerSource.appendChild(document.createTextNode(`TASALO — Tasas de ${sourceName}`));
-  }
-}
-
-async function handleSourceSwitch(newSource) {
-  const currentSource = getSourcePreference();
-  if (newSource === currentSource) return;
-
-  settings.sourcePreference = newSource;
-  await browser.storage.local.set({ settings });
-
-  await browser.runtime.sendMessage({
-    type: 'UPDATE_SETTINGS',
-    settings: { sourcePreference: newSource }
-  });
-
-  renderSourceSwitch();
-  await loadData();
-  renderAll();
 }
 
 // ── Grid de tarjetas ──────────────────────────
@@ -309,6 +263,82 @@ function applyTickerState() {
   if (chevron) chevron.classList.toggle('open', tickerOpen);
 }
 
+// ── Panel de ajustes inline ───────────────────
+function openSettingsPanel() {
+  const panel = document.getElementById('settingsPanel');
+  if (!panel) return;
+
+  // Cargar valores actuales en los controles
+  syncSegment('segSource', settings.sourcePreference || 'eltoque');
+  syncSegment('segInterval', String(settings.updateInterval ?? 5));
+  syncSegment('segTheme', settings.colorBg || 'auto');
+
+  const toggleFlags = document.getElementById('toggleFlags');
+  if (toggleFlags) {
+    const on = settings.showCurrencyFlag !== false;
+    toggleFlags.dataset.on = String(on);
+    toggleFlags.classList.toggle('on', on);
+  }
+
+  panel.style.display = 'block';
+  settingsOpen = true;
+}
+
+function closeSettingsPanel() {
+  const panel = document.getElementById('settingsPanel');
+  if (panel) panel.style.display = 'none';
+  settingsOpen = false;
+}
+
+function syncSegment(id, activeVal) {
+  const seg = document.getElementById(id);
+  if (!seg) return;
+  seg.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.val === activeVal);
+  });
+}
+
+function getSegValue(id) {
+  const seg = document.getElementById(id);
+  if (!seg) return null;
+  const active = seg.querySelector('.seg-btn.active');
+  return active ? active.dataset.val : null;
+}
+
+// ── Guardar ajustes ───────────────────────────
+async function saveSettings() {
+  const source = getSegValue('segSource') || 'eltoque';
+  const interval = parseInt(getSegValue('segInterval') || '5', 10);
+  const theme = getSegValue('segTheme') || 'auto';
+  const toggleFlags = document.getElementById('toggleFlags');
+  const showFlags = toggleFlags ? toggleFlags.dataset.on === 'true' : true;
+
+  const newSettings = {
+    ...settings,
+    sourcePreference: source,
+    updateInterval: interval,
+    colorBg: theme,
+    showCurrencyFlag: showFlags,
+  };
+
+  await browser.storage.local.set({ settings: newSettings });
+  settings = newSettings;
+
+  await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings: newSettings });
+
+  applyTheme();
+  applyColors();
+  renderAll();
+  closeSettingsPanel();
+
+  const iv = settings.updateInterval ?? 5;
+  const footerInterval = document.getElementById('footerInterval');
+  if (footerInterval) {
+    footerInterval.textContent =
+      `cada ${iv < 60 ? iv + ' min' : (iv / 60).toFixed(1) + ' h'}`;
+  }
+}
+
 // ── Utilidades ────────────────────────────────
 function fmtRate(val) {
   if (val >= 10000) return val.toLocaleString('es-CU', { maximumFractionDigits: 0 });
@@ -323,6 +353,7 @@ function fmtTime(iso) {
 }
 
 function applyTheme() {
+  document.body.classList.remove('theme-dark', 'theme-light');
   const t = settings.colorBg;
   if (t === 'dark') document.body.classList.add('theme-dark');
   if (t === 'light') document.body.classList.add('theme-light');
@@ -338,21 +369,8 @@ function applyColors() {
 
 // ── Listeners ─────────────────────────────────
 function attachListeners() {
-  // Source Switch
-  const sourceSwitch = document.getElementById('sourceSwitch');
-  if (sourceSwitch) {
-    sourceSwitch.addEventListener('click', (e) => {
-      const btn = e.target.closest('.source-btn');
-      if (btn && btn.dataset.source) {
-        handleSourceSwitch(btn.dataset.source);
-      }
-    });
-  }
-
+  // Refresh
   const btnRefresh = document.getElementById('btnRefresh');
-  const btnSettings = document.getElementById('btnSettings');
-  const tickerToggle = document.getElementById('tickerToggle');
-
   if (btnRefresh) {
     btnRefresh.addEventListener('click', async () => {
       btnRefresh.classList.add('spinning');
@@ -377,18 +395,52 @@ function attachListeners() {
     });
   }
 
+  // Settings toggle (abre panel inline en vez de options page)
+  const btnSettings = document.getElementById('btnSettings');
   if (btnSettings) {
     btnSettings.addEventListener('click', () => {
-      browser.runtime.openOptionsPage();
+      if (settingsOpen) {
+        closeSettingsPanel();
+      } else {
+        openSettingsPanel();
+      }
     });
   }
 
+  // Ticker toggle
+  const tickerToggle = document.getElementById('tickerToggle');
   if (tickerToggle) {
     tickerToggle.addEventListener('click', () => {
       tickerOpen = !tickerOpen;
       applyTickerState();
       browser.storage.local.set({ popupUiState: { tickerOpen } });
     });
+  }
+
+  // Segment buttons (delegated)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    const seg = btn.closest('.settings-seg');
+    if (!seg) return;
+    seg.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+
+  // Toggle flags
+  const toggleFlags = document.getElementById('toggleFlags');
+  if (toggleFlags) {
+    toggleFlags.addEventListener('click', () => {
+      const isOn = toggleFlags.dataset.on === 'true';
+      toggleFlags.dataset.on = String(!isOn);
+      toggleFlags.classList.toggle('on', !isOn);
+    });
+  }
+
+  // Save settings
+  const btnSave = document.getElementById('btnSaveSettings');
+  if (btnSave) {
+    btnSave.addEventListener('click', saveSettings);
   }
 }
 

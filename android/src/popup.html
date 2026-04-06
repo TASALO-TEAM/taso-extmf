@@ -17,18 +17,9 @@
         <span class="logo-mark">💱</span>
         <div class="brand-block">
           <span class="brand">TASALO</span>
+          <span class="brand-sep">/</span>
+          <span class="brand-sub">Tasas de cambio</span>
         </div>
-      </div>
-      <!-- Source Switch -->
-      <div class="source-switch" id="sourceSwitch" title="Cambiar fuente de datos">
-        <button class="source-btn active" data-source="eltoque" title="El Toque (Mercado Informal)">
-          <span class="source-icon">🔵</span>
-          <span class="source-label">Toque</span>
-        </button>
-        <button class="source-btn" data-source="bcc" title="BCC (Mercado Oficial)">
-          <span class="source-icon">🟢</span>
-          <span class="source-label">BCC</span>
-        </button>
       </div>
       <div class="header-right">
         <span class="update-dot" id="updateDot" title="Estado API"></span>
@@ -85,6 +76,55 @@
             <span style="padding:0 16px;font-size:9px;color:var(--text3);font-family:var(--mono)">cargando...</span>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Panel de Ajustes inline (Android) -->
+    <div class="settings-panel" id="settingsPanel" style="display:none">
+      <div class="settings-title">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Ajustes
+      </div>
+
+      <div class="settings-row">
+        <label class="settings-label">Fuente de tasas</label>
+        <div class="settings-seg" id="segSource">
+          <button class="seg-btn active" data-val="eltoque">El Toque</button>
+          <button class="seg-btn" data-val="bcc">BCC Oficial</button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <label class="settings-label">Actualizar cada</label>
+        <div class="settings-seg" id="segInterval">
+          <button class="seg-btn" data-val="5">5 min</button>
+          <button class="seg-btn" data-val="15">15 min</button>
+          <button class="seg-btn" data-val="30">30 min</button>
+          <button class="seg-btn" data-val="60">1 h</button>
+        </div>
+      </div>
+
+      <div class="settings-row">
+        <label class="settings-label">Tema</label>
+        <div class="settings-seg" id="segTheme">
+          <button class="seg-btn active" data-val="auto">Auto</button>
+          <button class="seg-btn" data-val="dark">Oscuro</button>
+          <button class="seg-btn" data-val="light">Claro</button>
+        </div>
+      </div>
+
+      <div class="settings-row settings-row-toggle">
+        <label class="settings-label">Mostrar banderas</label>
+        <button class="toggle-btn" id="toggleFlags" data-on="true">
+          <span class="toggle-thumb"></span>
+        </button>
+      </div>
+
+      <div class="settings-save-row">
+        <button class="save-btn" id="btnSaveSettings">Guardar ajustes</button>
       </div>
     </div>
 

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "TASALO — Tasas de Cambio Cuba",
   "short_name": "TASALO",
-  "version": "0.1.6.2",
+  "version": "0.1.4",
   "description": "Tasas de cambio Cuba - El Toque, BCC, Binance",
   "icons": {
     "16": "icons/icon16.png",
@@ -21,18 +21,7 @@
   "background": {
     "scripts": [
       "src/background.js"
-    ],
-    "type": "module"
-  },
-  "options_ui": {
-    "page": "src/options.html",
-    "open_in_tab": true
-  },
-  "omnibox": {
-    "keyword": "tsl"
-  },
-  "chrome_url_overrides": {
-    "newtab": "src/newtab.html"
+    ]
   },
   "permissions": [
     "storage",
@@ -40,11 +29,11 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://tasalo.duckdns.org/*"
+    "http://tasalo.duckdns.org:8040/*"
   ],
   "browser_specific_settings": {
     "gecko": {
-      "id": "tasalo-app@tasalo.app",
+      "id": "tasalo-android@tasalo.app",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
         "required": [

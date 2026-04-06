@@ -5,8 +5,8 @@
 // ═══════════════════════════════════════════════
 //  API Configuration - PRODUCTION URL
 // ═══════════════════════════════════════════════
-export const DEFAULT_API_URL = 'https://tasalo.duckdns.org';
-export const PRODUCTION_API_URL = 'https://tasalo.duckdns.org';
+export const DEFAULT_API_URL = 'http://tasalo.duckdns.org:8040';
+export const PRODUCTION_API_URL = 'http://tasalo.duckdns.org:8040';
 
 export const ALARMS = {
   REFRESH: 'tasalo-refresh',
@@ -91,5 +91,10 @@ export function log(message, type = 'INFO') {
   console.log(`[${timestamp}] [${type}] ${message}`);
 }
 
-// Cross-browser API wrapper
-export const browser = globalThis.browser ?? globalThis.chrome;
+// Cross-browser API wrapper (Firefox MV3)
+// Se define como función para evitar ReferenceError si chrome no existe
+export const browser = (() => {
+  if (typeof globalThis.browser !== 'undefined') return globalThis.browser;
+  if (typeof globalThis.chrome !== 'undefined') return globalThis.chrome;
+  throw new Error('No browser API found');
+})();
