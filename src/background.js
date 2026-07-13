@@ -1,7 +1,7 @@
-// ═══════════════════════════════════════════════
-//  TASALO — Background Script (Firefox Desktop) v0.1.6.0
+// ═════════════════════════════════════════════════
+//  TASALO — Background Script (Firefox Desktop)
 //  COPIA EXACTA de Android (que funciona) + features desktop
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 
 // Cross-browser API
 const browser = globalThis.browser ?? globalThis.chrome;
@@ -10,6 +10,7 @@ const browser = globalThis.browser ?? globalThis.chrome;
 const DEFAULT_API_URL = 'https://tasalo.duckdns.org';
 const ALARMS = { REFRESH: 'tasalo-refresh', ROTATE: 'tasalo-rotate' };
 const PREFERRED_ORDER = ['EUR', 'USD', 'MLC', 'BTC', 'TRX', 'USDT', 'CAD', 'GBP', 'CHF', 'RUB', 'AUD', 'JPY', 'MXN', 'BRL', 'COP'];
+const DEFAULT_TICKER_CURRENCIES = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'];
 
 const CURRENCY_META = {
   EUR: { name: 'Euro', symbol: '€', flag: '🇪🇺' },
@@ -32,19 +33,26 @@ const CURRENCY_META = {
 const DEFAULT_SETTINGS = {
   apiUrl: DEFAULT_API_URL,
   updateInterval: 5,
-  sourcePreference: 'eltoque',
+  sourcePreference: 'eltoque', // 'eltoque' | 'bcc' | 'cadeca'
   newTabEnabled: true,
   omniboxEnabled: true,
-  tickerCurrencies: ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'],
+  tickerEnabled: true,
+  tickerCurrencies: [...DEFAULT_TICKER_CURRENCIES],
+  scrollSpeed: 40,
   showCurrencyFlag: true,
   showTimestamp: true,
+  compactMode: false,
   fontSize: 13,
+  colorUp: '#ff6b6b',
+  colorDown: '#4ade80',
+  colorNeutral: 'auto',
   colorBg: 'auto',
+  opacity: 1.0,
+  selectedCurrencies: [],
+  currencyOrder: [...PREFERRED_ORDER],
   iconRotateEnabled: true,
   iconRotateInterval: 2,
 };
-
-const DEFAULT_BINANCE_CURRENCIES = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'];
 
 // State
 let cachedRates = {};
@@ -58,9 +66,9 @@ function log(msg, type = 'INFO') {
   console.log(`[${ts}] [${type}] ${msg}`);
 }
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Init
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 browser.runtime.onInstalled.addListener(async () => {
   log('Extension installed');
 
@@ -88,9 +96,9 @@ browser.runtime.onStartup.addListener(async () => {
   await fetchRates();
 });
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Alarms
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 async function setupAlarms() {
   await browser.alarms.clearAll();
 
@@ -112,6 +120,13 @@ async function setupAlarms() {
 browser.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARMS.REFRESH) {
     log('Alarm: refresh');
+    // FIX (paridad Chromium): recargar settings desde storage antes de
+    // fetchear — en un event page/service worker no persistente, la
+    // variable en memoria puede quedar desactualizada entre despertares.
+    const stored = await browser.storage.local.get('settings');
+    if (stored.settings) {
+      cachedSettings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...stored.settings };
+    }
     await fetchRates();
   }
 
@@ -120,9 +135,9 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Fetch Rates
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 async function fetchRates() {
   try {
     const apiUrl = cachedSettings.apiUrl || DEFAULT_API_URL;
@@ -163,26 +178,36 @@ async function fetchRates() {
     // Extract rates per source (sin mezclar, cada fuente por separado)
     const eltoqueRates = parseSourceRates(data.data.eltoque || {});
     const bccRates     = parseSourceRates(data.data.bcc     || {});
-    const cadecaRates  = parseSourceRates(data.data.cadeca  || {});
+    // FIX: CADECA no trae un campo "rate" en la API (solo buy/sell), son
+    // precios reales de compra y venta — se preservan ambos en vez de
+    // aplastarlos a un solo número (antes se perdía esta información).
+    const cadecaRates  = parseCadecaRates(data.data.cadeca  || {});
     const binanceRates = extractBinanceRates(data.data.binance);
+
+    // Vista plana de CADECA (solo números) para badge/omnibox/cálculo de cambios
+    const cadecaFlat = {};
+    for (const [cur, info] of Object.entries(cadecaRates)) {
+      cadecaFlat[cur] = info.rate;
+    }
 
     // Seleccionar tasas activas según preferencia del usuario
     const sourcePreference = cachedSettings.sourcePreference || 'eltoque';
-    const primaryRates = sourcePreference === 'bcc'    ? bccRates
-                       : sourcePreference === 'cadeca' ? cadecaRates
-                       : eltoqueRates;
+    const primaryRatesFlat = sourcePreference === 'bcc'    ? bccRates
+                           : sourcePreference === 'cadeca' ? cadecaFlat
+                           : eltoqueRates;
 
-    const changes = calculateChanges(primaryRates, cachedRates);
+    const changes = calculateChanges(primaryRatesFlat, cachedRates);
 
-    // Update cache
-    cachedRates = primaryRates;
+    // Update cache (siempre números planos, para badge/omnibox)
+    cachedRates = primaryRatesFlat;
     cachedChanges = changes;
     cachedBinanceRates = binanceRates;
 
-    // Save to storage (currentRates = fuente preferida, más cada fuente por separado)
+    // Save to storage (currentRates = fuente preferida, más cada fuente por separado;
+    // cadecaRates guarda los objetos ricos {buy,sell,rate,change} para el popup)
     const now = new Date().toISOString();
     await browser.storage.local.set({
-      currentRates:  primaryRates,
+      currentRates:  primaryRatesFlat,
       eltoqueRates,
       bccRates,
       cadecaRates,
@@ -192,15 +217,19 @@ async function fetchRates() {
       fetchError:    null,
     });
 
-    log(`✅ Saved ${Object.keys(primaryRates).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance`);
+    log(`✅ Saved ${Object.keys(primaryRatesFlat).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance`);
 
     // Update badge
     updateBadge();
 
+    // Frase del año + tasas de combustible: complementarios, no bloquean
+    // ni rompen el fetch principal si fallan.
+    await Promise.allSettled([fetchYearState(), fetchFuelRates()]);
+
     // Broadcast to tabs
     broadcastToTabs({
       type: 'RATES_UPDATED',
-      rates: primaryRates,
+      rates: primaryRatesFlat,
       changes,
       binanceRates,
       lastUpdated: now,
@@ -214,6 +243,40 @@ async function fetchRates() {
     });
 
     setBadgeText('ERR', '#dc2626');
+  }
+}
+
+// Frase del día / progreso del año (GET /api/v1/year/state)
+async function fetchYearState() {
+  try {
+    const apiUrl = cachedSettings.apiUrl || DEFAULT_API_URL;
+    const response = await fetch(`${apiUrl}/api/v1/year/state`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data && data.ok) {
+      await browser.storage.local.set({ yearState: data, yearStateUpdated: new Date().toISOString() });
+    }
+  } catch (error) {
+    log(`Year state fetch error: ${error.message}`, 'WARN');
+  }
+}
+
+// Tasas de combustible, rango de precios (GET /api/v1/tasas/fuel)
+async function fetchFuelRates() {
+  try {
+    const apiUrl = cachedSettings.apiUrl || DEFAULT_API_URL;
+    const response = await fetch(`${apiUrl}/api/v1/tasas/fuel`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data && data.rates) {
+      await browser.storage.local.set({ fuelRates: data, fuelRatesUpdated: new Date().toISOString() });
+    }
+  } catch (error) {
+    log(`Fuel rates fetch error: ${error.message}`, 'WARN');
   }
 }
 
@@ -256,6 +319,32 @@ function parseSourceRates(sourceData) {
   return rates;
 }
 
+// CADECA: la API devuelve {buy, sell, change, prev_rate} por moneda (SIN
+// campo "rate"), porque son precios de compra y venta reales, no una
+// tasa única. Se preservan ambos valores para mostrarlos fielmente.
+function parseCadecaRates(sourceData) {
+  const rates = {};
+  if (!sourceData || typeof sourceData !== 'object') return rates;
+
+  for (const [key, value] of Object.entries(sourceData)) {
+    if (!value || typeof value !== 'object') continue;
+
+    const buy  = typeof value.buy === 'number' ? value.buy : (value.buy != null ? parseFloat(value.buy) : null);
+    const sell = typeof value.sell === 'number' ? value.sell : (value.sell != null ? parseFloat(value.sell) : null);
+
+    if (buy === null && sell === null) continue;
+
+    rates[key.toUpperCase()] = {
+      buy,
+      sell,
+      rate: sell ?? buy,
+      change: value.change || 'neutral',
+    };
+  }
+
+  return rates;
+}
+
 function extractRateValue(item) {
   if (typeof item === 'number') return item;
   if (typeof item === 'string') {
@@ -290,9 +379,9 @@ function calculateChanges(current, previous) {
   return changes;
 }
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Badge
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 function updateBadge() {
   const currency = 'USD';
   const rate = cachedRates[currency];
@@ -327,9 +416,9 @@ function setBadgeText(text, bgColor) {
   }
 }
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Messages
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'FETCH_NOW') {
     fetchRates().then(() => sendResponse({ ok: true }));
@@ -359,13 +448,23 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     cachedSettings = { ...cachedSettings, ...msg.settings };
     browser.storage.local.get(['eltoqueRates', 'bccRates', 'cadecaRates']).then(stored => {
       const pref = cachedSettings.sourcePreference || 'eltoque';
-      const primaryRates = pref === 'bcc'    ? (stored.bccRates    || {})
-                         : pref === 'cadeca' ? (stored.cadecaRates || {})
-                         : (stored.eltoqueRates || {});
-      if (Object.keys(primaryRates).length > 0) {
-        cachedRates = primaryRates;
-        const changes = calculateChanges(primaryRates, cachedRates);
-        browser.storage.local.set({ currentRates: primaryRates, rateChanges: changes });
+      let primaryRatesFlat;
+      if (pref === 'bcc') {
+        primaryRatesFlat = stored.bccRates || {};
+      } else if (pref === 'cadeca') {
+        primaryRatesFlat = {};
+        for (const [cur, info] of Object.entries(stored.cadecaRates || {})) {
+          primaryRatesFlat[cur] = (info && typeof info === 'object') ? info.rate : info;
+        }
+      } else {
+        primaryRatesFlat = stored.eltoqueRates || {};
+      }
+      if (Object.keys(primaryRatesFlat).length > 0) {
+        const changes = calculateChanges(primaryRatesFlat, cachedRates);
+        cachedRates = primaryRatesFlat;
+        cachedChanges = changes;
+        browser.storage.local.set({ currentRates: primaryRatesFlat, rateChanges: changes });
+        updateBadge();
       }
     });
     setupAlarms();
@@ -373,17 +472,27 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Omnibox (desktop only - con guards)
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 if (browser.omnibox) {
   browser.omnibox.onInputStarted.addListener(() => {
+    if (cachedSettings.omniboxEnabled === false) {
+      browser.omnibox.setDefaultSuggestion({
+        description: 'TASALO — búsqueda desde la barra desactivada (actívala en Opciones)'
+      });
+      return;
+    }
     browser.omnibox.setDefaultSuggestion({
       description: 'TASALO — escribe una moneda (USD, EUR, BTC...) o Enter para ver todo'
     });
   });
 
   browser.omnibox.onInputChanged.addListener((text, suggest) => {
+    if (cachedSettings.omniboxEnabled === false) {
+      suggest([]);
+      return;
+    }
     const query = text.trim().toUpperCase();
     const suggestions = [];
     const currencies = Object.keys(cachedRates);
@@ -423,9 +532,9 @@ if (browser.omnibox) {
   });
 }
 
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 //  Utilities
-// ═══════════════════════════════════════════════
+// ═════════════════════════════════════════════════
 function broadcastToTabs(message) {
   browser.tabs.query({}).then(tabs => {
     for (const tab of tabs) {
@@ -440,4 +549,8 @@ function broadcastToTabs(message) {
   }).catch(() => {});
 }
 
-log('Background script loaded (v0.1.6.0)');
+try {
+  log(`Background script loaded (v${browser.runtime.getManifest().version})`);
+} catch {
+  log('Background script loaded');
+}
