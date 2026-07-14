@@ -2,7 +2,7 @@
 
 > Tasas de cambio del dólar en Cuba en Firefox — El Toque, BCC, Binance
 
-[![Version](https://img.shields.io/badge/version-0.1.2--android-blue.svg)](https://github.com/TASALO-TEAM/taso-extmf)
+[![Version](https://img.shields.io/badge/version-0.1.8.0-blue.svg)](https://github.com/TASALO-TEAM/taso-extmf)
 [![Firefox](https://img.shields.io/badge/Firefox-140+-orange.svg)](https://www.mozilla.org/firefox/)
 [![Mozilla Add-ons](https://img.shields.io/amo/v/tasalo-tasas-de-cambio-cuba.svg?label=desktop)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-tasas-de-cambio-cuba/)
 [![Mozilla Add-ons](https://img.shields.io/amo/v/tasalo-cambio-cuba-android.svg?label=android)](https://addons.mozilla.org/es-ES/firefox/addon/tasalo-cambio-cuba-android/)
