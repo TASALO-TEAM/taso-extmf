@@ -4,7 +4,7 @@
 //  Con imports ES6 (type="module" en HTML) + Error handling
 // ═══════════════════════════════════════════════
 
-import { PREFERRED_ORDER, CURRENCY_META, PRODUCTION_API_URL, DEFAULT_TICKER_CURRENCIES, browser } from './constants.js';
+import { PREFERRED_ORDER, CURRENCY_META, PRODUCTION_API_URL, DEFAULT_TICKER_CURRENCIES, createFlagNode, browser } from './constants.js';
 
 // Estado global
 let currentRates = {};
@@ -413,7 +413,7 @@ function createFuelCard(label, buy, sell, change, meta, unit) {
 
   const top = document.createElement('div'); top.className = 'rcard-top';
   const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = label;
-  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.flag;
+  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.appendChild(createFlagNode(meta.flag, 15));
   top.appendChild(sym); top.appendChild(ico);
 
   const val = document.createElement('div'); val.className = 'rcard-val ' + sizeClass; val.textContent = valueText;
@@ -438,7 +438,7 @@ function createRateCard(currency, rate, change, meta, unit) {
 
   const top = document.createElement('div'); top.className = 'rcard-top';
   const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = currency;
-  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.flag;
+  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.appendChild(createFlagNode(meta.flag, 15));
   top.appendChild(sym); top.appendChild(ico);
 
   const val = document.createElement('div'); val.className = 'rcard-val ' + sizeClass; val.textContent = formatRate(rate);

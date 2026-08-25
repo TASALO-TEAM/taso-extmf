@@ -4,7 +4,7 @@
 //  Con imports ES6 (type="module" en HTML)
 // ═══════════════════════════════════════════════
 
-import { DEFAULT_SETTINGS, CURRENCY_META, PREFERRED_ORDER, DEFAULT_TICKER_CURRENCIES, TICKER_CURRENCY_META, browser } from './constants.js';
+import { DEFAULT_SETTINGS, CURRENCY_META, PREFERRED_ORDER, DEFAULT_TICKER_CURRENCIES, TICKER_CURRENCY_META, createFlagNode, browser } from './constants.js';
 
 let settings = {};
 let availableCurrencies = [];
@@ -193,7 +193,7 @@ async function renderCurrenciesList() {
     item.dataset.currency = currency;
 
     const left = document.createElement('div'); left.className = 'currency-left';
-    const flag = document.createElement('span'); flag.className = 'currency-flag'; flag.textContent = meta.flag;
+    const flag = document.createElement('span'); flag.className = 'currency-flag'; flag.appendChild(createFlagNode(meta.flag, 16));
     const info = document.createElement('div');
     const code = document.createElement('div'); code.className = 'currency-code'; code.textContent = currency;
     const name = document.createElement('div'); name.className = 'currency-name'; name.textContent = meta.name;

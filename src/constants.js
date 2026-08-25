@@ -119,3 +119,34 @@ export function log(message, type = 'INFO') {
 
 // Cross-browser API wrapper
 export const browser = globalThis.browser ?? globalThis.chrome;
+
+// ═══════════════════════════════════════════════
+//  Banderas de país como imagen (fix Chromium/Windows)
+// ═══════════════════════════════════════════════
+// Windows no trae banderas de país en su fuente de emojis del sistema
+// (Segoe UI Emoji las omite) — Chrome/Edge en Windows heredan esa
+// limitación y muestran el emoji vacío o las dos letras del código ISO.
+// Firefox sí las muestra porque usa su propia fuente de emojis. Para que
+// se vean igual en todos los navegadores, resolvemos las banderas de país
+// a una imagen (Twemoji) en vez de depender de la fuente del sistema.
+// Los demás símbolos (₿, 💳, ⚡, 💵, ⛽...) no son banderas y se quedan
+// como texto, porque esos sí renderizan bien en cualquier SO.
+export function isFlagEmoji(str) {
+  if (!str) return false;
+  const points = Array.from(str).map(c => c.codePointAt(0));
+  return points.length === 2 && points.every(p => p >= 0x1F1E6 && p <= 0x1F1FF);
+}
+
+// Devuelve un nodo DOM (texto o <img>) listo para appendChild
+export function createFlagNode(emoji, size = 14) {
+  if (!isFlagEmoji(emoji)) return document.createTextNode(emoji);
+  const codepoints = Array.from(emoji).map(c => c.codePointAt(0).toString(16)).join('-');
+  const img = document.createElement('img');
+  img.src = `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codepoints}.svg`;
+  img.alt = '';
+  img.width = size;
+  img.height = size;
+  img.loading = 'lazy';
+  img.style.cssText = 'display:inline-block;vertical-align:middle;border-radius:3px';
+  return img;
+}

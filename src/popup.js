@@ -3,7 +3,7 @@
 //  COPIA EXACTA de Android + source switch
 // ═══════════════════════════════════════════════
 
-import { PREFERRED_ORDER, CURRENCY_META, DEFAULT_TICKER_CURRENCIES, browser } from './constants.js';
+import { PREFERRED_ORDER, CURRENCY_META, DEFAULT_TICKER_CURRENCIES, createFlagNode, browser } from './constants.js';
 
 let settings = {};
 let currentRates = {};
@@ -269,7 +269,7 @@ function renderGrid() {
     if (showFlags) {
       const flagSpan = document.createElement('span');
       flagSpan.className = 'rate-flag';
-      flagSpan.textContent = meta.flag;
+      flagSpan.appendChild(createFlagNode(meta.flag));
       top.appendChild(flagSpan);
     }
 
