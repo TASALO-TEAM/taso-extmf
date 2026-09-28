@@ -1,49 +1,37 @@
 // ═══════════════════════════════════════════════
-//  TASALO — Background Script (Firefox Android) v0.1.4
-//  Sin imports - todo en un archivo
+//  TASALO — Background Script (Firefox Android)
+//  Sin imports - todo en un archivo (event page)
 // ═══════════════════════════════════════════════
 
 // Cross-browser API
 const browser = globalThis.browser ?? globalThis.chrome;
 
 // Constants inline (sin imports)
-const DEFAULT_API_URL = 'http://tasalo.duckdns.org:8040';
+// Firefox MV3 aplica `upgrade-insecure-requests` por defecto: http:// se
+// reescribe a https://. La API de producción vive detrás de Caddy en 443.
+const DEFAULT_API_URL = 'https://tasalo.duckdns.org';
+const LEGACY_API_URL_RE = /^http:\/\/tasalo\.duckdns\.org(:\d+)?\/?$/i;
 const ALARMS = { REFRESH: 'tasalo-refresh', ROTATE: 'tasalo-rotate' };
 const PREFERRED_ORDER = ['EUR', 'USD', 'MLC', 'BTC', 'TRX', 'USDT', 'CAD', 'GBP', 'CHF', 'RUB', 'AUD', 'JPY', 'MXN', 'BRL', 'COP'];
-
-const CURRENCY_META = {
-  EUR: { name: 'Euro', symbol: '€', flag: '🇪🇺' },
-  USD: { name: 'Dólar', symbol: '$', flag: '🇺🇸' },
-  MLC: { name: 'MLC', symbol: '₱', flag: '💳' },
-  BTC: { name: 'Bitcoin', symbol: '₿', flag: '₿' },
-  TRX: { name: 'TRON', symbol: '⚡', flag: '⚡' },
-  USDT: { name: 'Tether', symbol: 'T', flag: '💵' },
-  CAD: { name: 'Canadiense', symbol: 'C', flag: '🇨🇦' },
-  GBP: { name: 'Libra', symbol: '£', flag: '🇬🇧' },
-  CHF: { name: 'Franco Suizo', symbol: 'Fr', flag: '🇨🇭' },
-  RUB: { name: 'Rublo Ruso', symbol: '₽', flag: '🇷🇺' },
-  AUD: { name: 'Australiano', symbol: 'A', flag: '🇦🇺' },
-  JPY: { name: 'Yen', symbol: '¥', flag: '🇯🇵' },
-  MXN: { name: 'Mexicano', symbol: 'M', flag: '🇲🇽' },
-  BRL: { name: 'Real Brasileño', symbol: 'R', flag: '🇧🇷' },
-  COP: { name: 'Peso Colombiano', symbol: 'CO', flag: '🇨🇴' }
-};
+const DEFAULT_TICKER_CURRENCIES = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'];
 
 const DEFAULT_SETTINGS = {
   apiUrl: DEFAULT_API_URL,
   updateInterval: 5,
-  sourcePreference: 'eltoque',
+  sourcePreference: 'eltoque', // 'eltoque' | 'bcc' | 'cadeca'
   newTabEnabled: true,
-  tickerCurrencies: ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'],
+  tickerEnabled: true,
+  tickerCurrencies: [...DEFAULT_TICKER_CURRENCIES],
+  scrollSpeed: 40,
   showCurrencyFlag: true,
   showTimestamp: true,
   fontSize: 13,
   colorBg: 'auto',
+  selectedCurrencies: [],
+  currencyOrder: [...PREFERRED_ORDER],
   iconRotateEnabled: true,
   iconRotateInterval: 2,
 };
-
-const DEFAULT_BINANCE_CURRENCIES = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'];
 
 // State
 let cachedRates = {};
@@ -58,33 +46,52 @@ function log(msg, type = 'INFO') {
 }
 
 // ═══════════════════════════════════════════════
+//  Settings
+//  Firefox Android suspende el event page con frecuencia: al despertar,
+//  las variables en memoria vuelven a sus valores por defecto. Por eso los
+//  settings se recargan desde storage al cargar el script y antes de cada
+//  operación que dependa de ellos.
+// ═══════════════════════════════════════════════
+async function loadSettings() {
+  try {
+    const stored = await browser.storage.local.get('settings');
+    const merged = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...(stored.settings || {}) };
+
+    // Migración: instalaciones previas guardaron apiUrl con http:// (y/o :8040).
+    // Firefox lo reescribe a https://…:8040 (sin TLS) y el fetch falla siempre.
+    let migrated = false;
+    if (typeof merged.apiUrl !== 'string' || !merged.apiUrl || LEGACY_API_URL_RE.test(merged.apiUrl)) {
+      log(`Migrando apiUrl obsoleta (${merged.apiUrl}) → ${DEFAULT_API_URL}`, 'WARN');
+      merged.apiUrl = DEFAULT_API_URL;
+      migrated = true;
+    }
+
+    cachedSettings = merged;
+    if (migrated || !stored.settings) {
+      await browser.storage.local.set({ settings: merged });
+    }
+  } catch (e) {
+    log(`loadSettings error: ${e.message}`, 'WARN');
+  }
+  return cachedSettings;
+}
+
+// Se ejecuta cada vez que el event page despierta
+let ready = loadSettings();
+
+// ═══════════════════════════════════════════════
 //  Init
 // ═══════════════════════════════════════════════
 browser.runtime.onInstalled.addListener(async () => {
-  log('Extension installed');
-  
-  const stored = await browser.storage.local.get('settings');
-  if (!stored.settings) {
-    await browser.storage.local.set({ settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) });
-    log('Settings initialized');
-  } else {
-    // Cargar settings guardados para que sourcePreference sea correcto
-    cachedSettings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...stored.settings };
-    log('Settings loaded from storage');
-  }
-  
+  log('Extension installed/updated');
+  await loadSettings();
   await setupAlarms();
   await fetchRates();
 });
 
 browser.runtime.onStartup.addListener(async () => {
   log('Browser started');
-  // Cargar settings guardados para que sourcePreference sea correcto
-  const stored = await browser.storage.local.get('settings');
-  if (stored.settings) {
-    cachedSettings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...stored.settings };
-    log(`Settings loaded: sourcePreference=${cachedSettings.sourcePreference}`);
-  }
+  await loadSettings();
   await setupAlarms();
   await fetchRates();
 });
@@ -94,20 +101,21 @@ browser.runtime.onStartup.addListener(async () => {
 // ═══════════════════════════════════════════════
 async function setupAlarms() {
   await browser.alarms.clearAll();
-  
+
   const interval = cachedSettings.updateInterval ?? 5;
-  
+
   browser.alarms.create(ALARMS.REFRESH, {
     delayInMinutes: 0.1,
     periodInMinutes: interval,
   });
-  
+
   log(`Alarms set: refresh every ${interval} min`);
 }
 
 browser.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARMS.REFRESH) {
     log('Alarm: refresh');
+    await loadSettings();
     await fetchRates();
   }
 });
@@ -144,81 +152,86 @@ async function fetchRates() {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const data = await response.json();
     log(`Response: ok=${data.ok}`);
-    
+
     if (!data.ok || !data.data) {
       throw new Error('Invalid API response');
     }
-    
+
     // Extract rates per source (sin mezclar, cada fuente por separado)
     const eltoqueRates = parseSourceRates(data.data.eltoque || {});
     const bccRates     = parseSourceRates(data.data.bcc     || {});
-    const cadecaRates  = parseSourceRates(data.data.cadeca  || {});
+    // CADECA no trae "rate": son precios reales de compra y venta. Se
+    // preservan ambos ({buy, sell, rate, change}) para mostrarlos fielmente.
+    const cadecaRates  = parseCadecaRates(data.data.cadeca  || {});
     const binanceRates = extractBinanceRates(data.data.binance);
 
-    // Seleccionar tasas activas según preferencia del usuario
-    const sourcePreference = cachedSettings.sourcePreference || 'eltoque';
-    const primaryRates = sourcePreference === 'bcc'    ? bccRates
-                       : sourcePreference === 'cadeca' ? cadecaRates
-                       : eltoqueRates;
+    // Vista plana de CADECA (solo números) para badge y cálculo de cambios
+    const cadecaFlat = {};
+    for (const [cur, info] of Object.entries(cadecaRates)) {
+      cadecaFlat[cur] = info.rate;
+    }
 
-    const changes = calculateChanges(primaryRates, cachedRates);
-    
-    // Update cache
-    cachedRates = primaryRates;
+    const sourcePreference = cachedSettings.sourcePreference || 'eltoque';
+    const primaryRatesFlat = sourcePreference === 'bcc'    ? bccRates
+                           : sourcePreference === 'cadeca' ? cadecaFlat
+                           : eltoqueRates;
+
+    // Tras una suspensión cachedRates está vacío: recuperar las tasas previas
+    // desde storage (solo si eran de la misma fuente) para no marcar todo "new".
+    const prevStore = await browser.storage.local.get(['currentRates', 'ratesSource', 'previousRates']);
+    let previous = cachedRates;
+    if (Object.keys(previous).length === 0 && prevStore.ratesSource === sourcePreference) {
+      previous = prevStore.currentRates || {};
+    }
+
+    const changes = calculateChanges(primaryRatesFlat, previous);
+    const anyMove = Object.values(changes).some(c => c === 'up' || c === 'down');
+    const previousRates = anyMove
+      ? previous
+      : (prevStore.ratesSource === sourcePreference ? (prevStore.previousRates || {}) : {});
+
+    // Update cache (siempre números planos, para badge)
+    cachedRates = primaryRatesFlat;
     cachedChanges = changes;
     cachedBinanceRates = binanceRates;
-    
-    // Save to storage (currentRates = fuente preferida, más cada fuente por separado)
+
     const now = new Date().toISOString();
     await browser.storage.local.set({
-      currentRates:  primaryRates,
+      currentRates:  primaryRatesFlat,
+      ratesSource:   sourcePreference,
+      previousRates,
       eltoqueRates,
       bccRates,
-      cadecaRates,
+      cadecaRates,   // objetos ricos {buy,sell,rate,change} para el popup
       rateChanges:   changes,
       binanceRates,
       lastUpdated:   now,
       fetchError:    null,
     });
-    
-    log(`✅ Saved ${Object.keys(primaryRates).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance`);
-    
-    // Update badge
+
+    log(`✅ Saved ${Object.keys(primaryRatesFlat).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance`);
+
     updateBadge();
-    
+
   } catch (error) {
     log(`❌ Error: ${error.message}`, 'ERROR');
-    
+
     await browser.storage.local.set({
       fetchError: error.message,
     });
-    
+
     setBadgeText('ERR', '#dc2626');
   }
-}
-
-function extractAllRates(data) {
-  const rates = {};
-  const sources = ['eltoque', 'cadeca', 'bcc'];
-  
-  for (const source of sources) {
-    if (data[source]) {
-      const sourceRates = parseSourceRates(data[source]);
-      Object.assign(rates, sourceRates);
-    }
-  }
-  
-  return rates;
 }
 
 function extractBinanceRates(binanceData) {
   if (!binanceData || typeof binanceData !== 'object') {
     return {};
   }
-  
+
   const rates = {};
   for (const [currency, value] of Object.entries(binanceData)) {
     const rate = extractRateValue(value);
@@ -231,7 +244,7 @@ function extractBinanceRates(binanceData) {
 
 function parseSourceRates(sourceData) {
   const rates = {};
-  
+
   if (Array.isArray(sourceData)) {
     for (const item of sourceData) {
       const currency = (item.currency || item.code || '').toUpperCase();
@@ -240,7 +253,7 @@ function parseSourceRates(sourceData) {
         rates[currency] = rate;
       }
     }
-  } else if (typeof sourceData === 'object') {
+  } else if (sourceData && typeof sourceData === 'object') {
     for (const [key, value] of Object.entries(sourceData)) {
       const currency = key.toUpperCase();
       const rate = extractRateValue(value);
@@ -249,7 +262,34 @@ function parseSourceRates(sourceData) {
       }
     }
   }
-  
+
+  return rates;
+}
+
+// CADECA: la API devuelve {buy, sell, change, prev_rate} por moneda (SIN
+// campo "rate"). Se preservan compra y venta en vez de aplastarlas a un número.
+function parseCadecaRates(sourceData) {
+  const rates = {};
+  if (!sourceData || typeof sourceData !== 'object') return rates;
+
+  for (const [key, value] of Object.entries(sourceData)) {
+    if (!value || typeof value !== 'object') continue;
+
+    const buy  = typeof value.buy === 'number' ? value.buy : (value.buy != null ? parseFloat(value.buy) : null);
+    const sell = typeof value.sell === 'number' ? value.sell : (value.sell != null ? parseFloat(value.sell) : null);
+    const buyOk  = buy  !== null && !isNaN(buy);
+    const sellOk = sell !== null && !isNaN(sell);
+
+    if (!buyOk && !sellOk) continue;
+
+    rates[key.toUpperCase()] = {
+      buy:  buyOk ? buy : null,
+      sell: sellOk ? sell : null,
+      rate: sellOk ? sell : buy,
+      change: value.change || 'neutral',
+    };
+  }
+
   return rates;
 }
 
@@ -260,8 +300,6 @@ function extractRateValue(item) {
     return isNaN(n) ? null : n;
   }
   if (typeof item === 'object' && item !== null) {
-    // API devuelve {rate, buy, sell, change, prev_rate}
-    // Para CADECA: rate = sell_rate (oficial venta)
     const val = item.rate ?? item.sell ?? item.price ?? item.value ?? item.tasa;
     if (typeof val === 'number') return val;
     if (typeof val === 'string') {
@@ -291,11 +329,13 @@ function calculateChanges(current, previous) {
 
 // ═══════════════════════════════════════════════
 //  Badge
+//  (en Android puede no estar soportado: se capturan también los rechazos
+//  de las promesas, no solo las excepciones síncronas)
 // ═══════════════════════════════════════════════
 function updateBadge() {
   const currency = 'USD';
   const rate = cachedRates[currency];
-  
+
   if (rate !== undefined) {
     const text = formatBadgeValue(rate);
     const change = cachedChanges[currency];
@@ -319,8 +359,10 @@ function getBadgeColor(change) {
 
 function setBadgeText(text, bgColor) {
   try {
-    browser.action.setBadgeText({ text });
-    browser.action.setBadgeBackgroundColor({ color: bgColor });
+    const p1 = browser.action?.setBadgeText?.({ text });
+    const p2 = browser.action?.setBadgeBackgroundColor?.({ color: bgColor });
+    if (p1 && typeof p1.catch === 'function') p1.catch(() => {});
+    if (p2 && typeof p2.catch === 'function') p2.catch(() => {});
   } catch (e) {
     log(`Badge error: ${e.message}`, 'WARN');
   }
@@ -331,19 +373,23 @@ function setBadgeText(text, bgColor) {
 // ═══════════════════════════════════════════════
 browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'FETCH_NOW') {
-    fetchRates().then(() => sendResponse({ ok: true }));
+    loadSettings().then(() => fetchRates()).then(() => sendResponse({ ok: true }));
     return true;
   }
-  
+
   if (msg.type === 'GET_RATES') {
-    sendResponse({
-      rates: cachedRates,
-      changes: cachedChanges,
-      binanceRates: cachedBinanceRates,
-      settings: cachedSettings,
-    });
+    Promise.all([loadSettings(), browser.storage.local.get(['currentRates', 'rateChanges', 'binanceRates'])])
+      .then(([settings, stored]) => {
+        sendResponse({
+          rates: Object.keys(cachedRates).length ? cachedRates : (stored.currentRates || {}),
+          changes: Object.keys(cachedChanges).length ? cachedChanges : (stored.rateChanges || {}),
+          binanceRates: Object.keys(cachedBinanceRates).length ? cachedBinanceRates : (stored.binanceRates || {}),
+          settings,
+        });
+      });
+    return true;
   }
-  
+
   if (msg.type === 'RESET_SETTINGS') {
     browser.storage.local.set({ settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) })
       .then(async () => {
@@ -353,24 +399,51 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     return true;
   }
-  
+
   if (msg.type === 'UPDATE_SETTINGS') {
-    cachedSettings = { ...cachedSettings, ...msg.settings };
-    // Si cambió la fuente, actualizar currentRates en storage desde la fuente correcta
-    browser.storage.local.get(['eltoqueRates', 'bccRates', 'cadecaRates']).then(stored => {
+    (async () => {
+      await loadSettings();
+      cachedSettings = { ...cachedSettings, ...msg.settings };
+
+      // Si cambió la fuente, actualizar currentRates desde los datos ya cacheados
+      const stored = await browser.storage.local.get(['eltoqueRates', 'bccRates', 'cadecaRates']);
       const pref = cachedSettings.sourcePreference || 'eltoque';
-      const primaryRates = pref === 'bcc'    ? (stored.bccRates    || {})
-                         : pref === 'cadeca' ? (stored.cadecaRates || {})
-                         : (stored.eltoqueRates || {});
-      if (Object.keys(primaryRates).length > 0) {
-        cachedRates = primaryRates;
-        const changes = calculateChanges(primaryRates, cachedRates);
-        browser.storage.local.set({ currentRates: primaryRates, rateChanges: changes });
+      let primaryRatesFlat;
+      if (pref === 'bcc') {
+        primaryRatesFlat = stored.bccRates || {};
+      } else if (pref === 'cadeca') {
+        primaryRatesFlat = {};
+        for (const [cur, info] of Object.entries(stored.cadecaRates || {})) {
+          primaryRatesFlat[cur] = (info && typeof info === 'object') ? info.rate : info;
+        }
+      } else {
+        primaryRatesFlat = stored.eltoqueRates || {};
       }
-    });
-    setupAlarms();
-    sendResponse({ ok: true });
+
+      if (Object.keys(primaryRatesFlat).length > 0) {
+        // Al cambiar de fuente no hay tasa previa comparable (cachedRates es de
+        // otra fuente): se marcan neutrales hasta el próximo refresh.
+        const changes = {};
+        for (const cur of Object.keys(primaryRatesFlat)) changes[cur] = 'neutral';
+        cachedRates = primaryRatesFlat;
+        cachedChanges = changes;
+        await browser.storage.local.set({
+          currentRates: primaryRatesFlat,
+          ratesSource: pref,
+          rateChanges: changes,
+        });
+        updateBadge();
+      }
+
+      await setupAlarms();
+      sendResponse({ ok: true });
+    })();
+    return true;
   }
 });
 
-log('Background script loaded (v0.1.3)');
+try {
+  log(`Background script loaded (v${browser.runtime.getManifest().version})`);
+} catch {
+  log('Background script loaded');
+}

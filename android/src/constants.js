@@ -5,8 +5,11 @@
 // ═══════════════════════════════════════════════
 //  API Configuration - PRODUCTION URL
 // ═══════════════════════════════════════════════
-export const DEFAULT_API_URL = 'http://tasalo.duckdns.org:8040';
-export const PRODUCTION_API_URL = 'http://tasalo.duckdns.org:8040';
+// IMPORTANTE: Firefox MV3 aplica `upgrade-insecure-requests` por defecto, así que
+// cualquier http:// se reescribe a https:// (y el puerto 8040 no tiene TLS).
+// Producción real: https://tasalo.duckdns.org (Caddy, 443 → /api/* → :8040).
+export const DEFAULT_API_URL = 'https://tasalo.duckdns.org';
+export const PRODUCTION_API_URL = 'https://tasalo.duckdns.org';
 
 export const ALARMS = {
   REFRESH: 'tasalo-refresh',
@@ -41,14 +44,24 @@ export const CURRENCY_META = {
 };
 
 // ═══════════════════════════════════════════════
+//  Ticker (Binance)
+// ═══════════════════════════════════════════════
+export const DEFAULT_TICKER_CURRENCIES = [
+  'BTC', 'ETH', 'BNB', 'XRP', 'ADA',
+  'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'
+];
+
+// ═══════════════════════════════════════════════
 //  Default Settings
 // ═══════════════════════════════════════════════
 export const DEFAULT_SETTINGS = {
   apiUrl:             DEFAULT_API_URL,
   updateInterval:     5,                // minutes
-  sourcePreference:   'eltoque',        // 'eltoque' | 'bcc'
+  sourcePreference:   'eltoque',        // 'eltoque' | 'bcc' | 'cadeca'
   showChangeType:     'color',
   scrollSpeed:        40,
+  tickerEnabled:      true,
+  tickerCurrencies:   [...DEFAULT_TICKER_CURRENCIES],
   fontSize:           13,
   showTimestamp:      true,
   showCurrencyFlag:   true,

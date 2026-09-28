@@ -1,5 +1,44 @@
 # TASALO Android — Notas de versión
 
+## v0.2.0.0 (2026-09-28)
+
+### Correcciones
+- **Causa raíz de que no cargara nada en Firefox Android**: la extensión usaba
+  `http://tasalo.duckdns.org:8040`. El CSP por defecto de MV3 en Firefox incluye
+  `upgrade-insecure-requests`, que reescribe todo `fetch` de `http://` a
+  `https://`; la petición salía a `https://…:8040` (puerto sin TLS) y fallaba
+  siempre. Ahora usa `https://tasalo.duckdns.org` (Caddy, 443), igual que la
+  extensión de escritorio, y `host_permissions` se actualizó a `https://`.
+- **Migración de `apiUrl` guardada**: instalaciones previas conservaban la URL
+  vieja en `storage` (pisaba el default). Al cargar settings se reemplaza
+  automáticamente cualquier `http://tasalo.duckdns.org[:puerto]` por la nueva.
+- **Settings al despertar el background**: Firefox Android suspende el event
+  page; al despertar se perdía la fuente elegida y la URL. Ahora los settings se
+  recargan desde storage al cargar el script y antes de cada refresh, mensaje
+  `FETCH_NOW`/`GET_RATES`/`UPDATE_SETTINGS`.
+- **Cambios de tasa tras suspensión**: ya no marca todo como "new" al despertar
+  (se recuperan las tasas previas desde storage si son de la misma fuente) y se
+  guarda `previousRates` para mostrar la diferencia en las tarjetas.
+- **Cambio de fuente**: los cambios ya no se calculan contra las tasas de otra
+  fuente; el badge se actualiza al instante.
+- **Fallback silencioso a El Toque**: si la fuente elegida no tenía datos, el
+  popup mostraba El Toque bajo su etiqueta. Ahora muestra solo los datos de la
+  fuente activa ("Sin datos de X por ahora").
+- **Panel de ajustes cortado** en pantallas chicas (`overflow: hidden`): el
+  popup ahora puede scrollear.
+- Badge: se capturan los rechazos de promesa si la API no está soportada.
+- Eliminado código muerto (`extractAllRates`) y versiones hardcodeadas en logs.
+
+### Paridad con la extensión de escritorio
+- **CADECA** como tercera fuente (Compra–Venta, sin aplastar a un solo número).
+- Monedas mostradas derivadas de las tasas reales de la fuente (respeta
+  `selectedCurrencies`), en vez de listas fijas por fuente.
+- Ticker respeta `tickerEnabled` y `scrollSpeed`.
+- Rediseño visual "Quiet Glass" v2 (paleta clara suave, radios más redondeados,
+  un solo acento), con hover/glare solo en dispositivos con puntero.
+- Sin cambios a propósito: banderas como emoji nativo (Android las renderiza),
+  sin frase del día/combustible (dependen del newtab, que Android no tiene).
+
 ## v0.1.4 (2026-04-02)
 
 ### Correcciones
