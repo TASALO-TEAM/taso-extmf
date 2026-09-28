@@ -4,7 +4,7 @@
 //  Los ajustes se muestran inline en el popup
 // ═══════════════════════════════════════════════
 
-import { PREFERRED_ORDER, CURRENCY_META, browser } from './constants.js';
+import { PREFERRED_ORDER, CURRENCY_META, DEFAULT_TICKER_CURRENCIES, browser } from './constants.js';
 
 let settings = {};
 let currentRates = {};
@@ -15,10 +15,7 @@ let tickerOpen = false;
 let settingsOpen = false;
 let listenersAttached = false;
 
-const DEFAULT_BINANCE_CURRENCIES = [
-  'BTC', 'ETH', 'BNB', 'XRP', 'ADA',
-  'DOGE', 'SOL', 'TRX', 'DOT', 'MATIC'
-];
+const SOURCE_NAMES = { eltoque: 'El Toque', bcc: 'BCC', cadeca: 'CADECA' };
 
 // ── Debounce ───────────────────────────────────
 function debounce(fn, delay) {
@@ -52,18 +49,10 @@ async function loadData() {
   ]);
   settings = data.settings ?? {};
 
-  // Seleccionar tasas de la fuente preferida (no la mezcla)
-  const pref = settings.sourcePreference || 'eltoque';
-  if (pref === 'bcc' && data.bccRates && Object.keys(data.bccRates).length > 0) {
-    currentRates = data.bccRates;
-  } else if (pref === 'cadeca' && data.cadecaRates && Object.keys(data.cadecaRates).length > 0) {
-    currentRates = data.cadecaRates;
-  } else if (data.eltoqueRates && Object.keys(data.eltoqueRates).length > 0) {
-    currentRates = data.eltoqueRates;
-  } else {
-    // fallback: usar currentRates genérico si aún no hay datos por fuente
-    currentRates = data.currentRates ?? {};
-  }
+  // Cada fuente muestra SOLO sus propios datos (o vacío si no hay). Antes se
+  // caía en silencio a El Toque bajo la etiqueta de la fuente elegida.
+  const pref = getSourcePreference();
+  currentRates = selectRatesForSource(pref, data);
 
   previousRates = data.previousRates ?? {};
   rateChanges   = data.rateChanges   ?? {};
@@ -71,6 +60,7 @@ async function loadData() {
 
   const errorBanner = document.getElementById('errorBanner');
   const errorMsg = document.getElementById('errorMsg');
+  const loadingText = document.getElementById('ratesLoadingText');
 
   if (data.fetchError) {
     setDot('error');
@@ -81,6 +71,15 @@ async function loadData() {
     if (errorBanner) errorBanner.style.display = 'none';
   } else {
     setDot('loading');
+    if (errorBanner) errorBanner.style.display = 'none';
+  }
+
+  if (loadingText) {
+    if (!data.fetchError && Object.keys(currentRates).length === 0 && data.lastUpdated) {
+      loadingText.textContent = `Sin datos de ${SOURCE_NAMES[pref] || pref} por ahora`;
+    } else {
+      loadingText.textContent = 'Obteniendo tasas...';
+    }
   }
 
   const updateInfo = document.getElementById('updateInfo');
@@ -88,11 +87,32 @@ async function loadData() {
     updateInfo.textContent = fmtTime(data.lastUpdated);
   }
 
+  updateFooter();
+}
+
+function selectRatesForSource(pref, data) {
+  if (pref === 'bcc')     return data.bccRates    || {};
+  if (pref === 'cadeca')  return data.cadecaRates || {};
+  if (pref === 'eltoque') return data.eltoqueRates || {};
+  return data.currentRates || {};
+}
+
+function updateFooter() {
   const iv = settings.updateInterval ?? 5;
   const footerInterval = document.getElementById('footerInterval');
   if (footerInterval) {
     footerInterval.textContent =
       `cada ${iv < 60 ? iv + ' min' : (iv / 60).toFixed(1) + ' h'}`;
+  }
+
+  const footerSource = document.querySelector('.footer-source');
+  if (footerSource) {
+    const names = { eltoque: 'El Toque (Informal)', bcc: 'BCC (Oficial)', cadeca: 'CADECA' };
+    footerSource.textContent = '';
+    const dot = document.createElement('span');
+    dot.className = 'footer-dot';
+    footerSource.appendChild(dot);
+    footerSource.appendChild(document.createTextNode(`TASALO — Tasas de ${names[getSourcePreference()] || names.eltoque}`));
   }
 }
 
@@ -110,11 +130,10 @@ function renderAll() {
   if (ratesLoading) ratesLoading.style.display = hasRates ? 'none' : 'flex';
   if (ratesGrid) ratesGrid.style.display = hasRates ? 'grid' : 'none';
 
-  if (hasRates) {
-    renderGrid();
-    renderTicker();
-  }
+  if (hasRates) renderGrid();
 
+  // El ticker de Binance es independiente de la fuente elegida
+  renderTicker();
   applyTickerState();
 }
 
@@ -122,23 +141,16 @@ function getSourcePreference() {
   return settings.sourcePreference || 'eltoque';
 }
 
+// Se derivan de las tasas reales de la fuente activa (no de listas fijas)
 function getSourceCurrencies() {
-  const source = getSourcePreference();
-  if (source === 'eltoque') return ['EUR', 'USD', 'MLC', 'BTC', 'TRX', 'USDT'];
-  if (source === 'bcc') return ['EUR', 'USD', 'CAD', 'GBP', 'CHF', 'MXN'];
-  return ['EUR', 'USD', 'MLC', 'BTC', 'TRX', 'USDT'];
+  return Object.keys(currentRates);
 }
 
 function getSortedCurrencies() {
-  const sourceCurrencies = getSourceCurrencies();
   const order = settings.currencyOrder?.length ? settings.currencyOrder : PREFERRED_ORDER;
   const selected = settings.selectedCurrencies ?? [];
 
-  const filtered = sourceCurrencies.filter(cur =>
-    Object.keys(currentRates).includes(cur)
-  );
-
-  const sorted = [...filtered].sort((a, b) => {
+  const sorted = [...getSourceCurrencies()].sort((a, b) => {
     const ia = order.indexOf(a), ib = order.indexOf(b);
     if (ia === -1 && ib === -1) return a.localeCompare(b);
     if (ia === -1) return 1;
@@ -157,22 +169,45 @@ function renderGrid() {
   const currencies = getSortedCurrencies();
   const showFlags = settings.showCurrencyFlag !== false;
   const fontSize = settings.fontSize ?? 13;
+  const isCadeca = getSourcePreference() === 'cadeca';
 
   const cols = currencies.length <= 2 ? 'cols-2' : '';
   grid.className = 'rates-grid ' + cols;
-  grid.innerHTML = '';
+  grid.textContent = '';
 
   for (const cur of currencies) {
     const val = currentRates[cur];
     if (val === undefined) continue;
     const change = rateChanges[cur] ?? 'neutral';
-    const prev = previousRates[cur];
     const meta = CURRENCY_META[cur] ?? { name: cur, flag: '💱' };
-    const diff = prev !== undefined ? val - prev : null;
     const arrow = change === 'up' ? '▲' : change === 'down' ? '▼' : '—';
 
     const card = document.createElement('div');
     card.className = `rate-card ${change}`;
+
+    let valueText, subLabel, diffText, valFontSize;
+
+    if (isCadeca && val && typeof val === 'object') {
+      // CADECA son precios reales de compra y venta, no una tasa única
+      const buy = val.buy;
+      const sell = val.sell;
+      if (buy != null && sell != null && buy !== sell) {
+        valueText = `${fmtRate(buy)}–${fmtRate(sell)}`;
+      } else {
+        valueText = fmtRate(sell ?? buy ?? 0);
+      }
+      subLabel = 'Compra–Venta';
+      diffText = arrow;
+      valFontSize = fontSize + 1;
+    } else {
+      const numVal = typeof val === 'number' ? val : (val && typeof val.rate === 'number' ? val.rate : 0);
+      const prev = previousRates[cur];
+      const diff = typeof prev === 'number' ? numVal - prev : null;
+      valueText = fmtRate(numVal);
+      subLabel = meta.name;
+      diffText = arrow + (diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : '');
+      valFontSize = fontSize + 4;
+    }
 
     const top = document.createElement('div');
     top.className = 'rate-top';
@@ -181,6 +216,7 @@ function renderGrid() {
     curSpan.textContent = cur;
     top.appendChild(curSpan);
     if (showFlags) {
+      // Emoji nativo: Firefox Android sí trae banderas en su fuente de emoji
       const flagSpan = document.createElement('span');
       flagSpan.className = 'rate-flag';
       flagSpan.textContent = meta.flag;
@@ -189,17 +225,17 @@ function renderGrid() {
 
     const valDiv = document.createElement('div');
     valDiv.className = 'rate-val';
-    valDiv.style.fontSize = (fontSize + 4) + 'px';
-    valDiv.textContent = fmtRate(val);
+    valDiv.style.fontSize = valFontSize + 'px';
+    valDiv.textContent = valueText;
 
     const bot = document.createElement('div');
     bot.className = 'rate-bot';
     const nameSpan = document.createElement('span');
     nameSpan.className = 'rate-name';
-    nameSpan.textContent = meta.name;
+    nameSpan.textContent = subLabel;
     const diffSpan = document.createElement('span');
     diffSpan.className = 'rate-diff';
-    diffSpan.textContent = arrow + (diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : '');
+    diffSpan.textContent = diffText;
     bot.appendChild(nameSpan);
     bot.appendChild(diffSpan);
 
@@ -213,9 +249,16 @@ function renderGrid() {
 // ── Ticker ────────────────────────────────────
 function renderTicker() {
   const strip = document.getElementById('tickerStrip');
+  const section = document.getElementById('tickerSection');
   if (!strip) return;
 
-  const currencies = settings.tickerCurrencies || DEFAULT_BINANCE_CURRENCIES;
+  if (settings.tickerEnabled === false) {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  if (section) section.style.display = '';
+
+  const currencies = settings.tickerCurrencies?.length ? settings.tickerCurrencies : DEFAULT_TICKER_CURRENCIES;
 
   function makeTickerEmpty(msg) {
     strip.textContent = '';
@@ -251,7 +294,10 @@ function renderTicker() {
     }
   }
 
-  const duration = Math.max(15, currencies.length * 0.4);
+  // 40 = velocidad base; mayor valor = ticker más rápido
+  const speed = settings.scrollSpeed || 40;
+  const baseDuration = Math.max(15, filtered.length * 0.4);
+  const duration = Math.max(6, baseDuration * (40 / speed));
   strip.style.animationDuration = `${duration}s`;
   document.documentElement.style.setProperty('--ticker-dur', `${duration}s`);
 }
@@ -268,8 +314,7 @@ function openSettingsPanel() {
   const panel = document.getElementById('settingsPanel');
   if (!panel) return;
 
-  // Cargar valores actuales en los controles
-  syncSegment('segSource', settings.sourcePreference || 'eltoque');
+  syncSegment('segSource', getSourcePreference());
   syncSegment('segInterval', String(settings.updateInterval ?? 5));
   syncSegment('segTheme', settings.colorBg || 'auto');
 
@@ -282,6 +327,7 @@ function openSettingsPanel() {
 
   panel.style.display = 'block';
   settingsOpen = true;
+  panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 function closeSettingsPanel() {
@@ -324,24 +370,22 @@ async function saveSettings() {
   await browser.storage.local.set({ settings: newSettings });
   settings = newSettings;
 
-  await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings: newSettings });
+  try {
+    await browser.runtime.sendMessage({ type: 'UPDATE_SETTINGS', settings: newSettings });
+  } catch (e) {
+    console.error('UPDATE_SETTINGS error:', e);
+  }
 
+  // Recargar desde storage para reflejar la fuente elegida
+  await loadData();
   applyTheme();
   applyColors();
   renderAll();
   closeSettingsPanel();
-
-  const iv = settings.updateInterval ?? 5;
-  const footerInterval = document.getElementById('footerInterval');
-  if (footerInterval) {
-    footerInterval.textContent =
-      `cada ${iv < 60 ? iv + ' min' : (iv / 60).toFixed(1) + ' h'}`;
-  }
 }
 
 // ── Utilidades ────────────────────────────────
 function fmtRate(val) {
-  if (val >= 10000) return val.toLocaleString('es-CU', { maximumFractionDigits: 0 });
   if (val >= 1000) return val.toLocaleString('es-CU', { maximumFractionDigits: 0 });
   return val.toFixed(val % 1 === 0 ? 0 : 1);
 }
@@ -378,12 +422,6 @@ function attachListeners() {
       setDot('loading');
       try {
         await browser.runtime.sendMessage({ type: 'FETCH_NOW' });
-        const data = await browser.storage.local.get([
-          'currentRates', 'rateChanges', 'binanceRates', 'lastUpdated', 'fetchError'
-        ]);
-        currentRates = data.currentRates || {};
-        rateChanges = data.rateChanges || {};
-        binanceRates = data.binanceRates || {};
         await loadData();
         renderAll();
       } catch (error) {
@@ -445,10 +483,8 @@ function attachListeners() {
 }
 
 const debouncedStorageUpdate = debounce(async (changes) => {
-  if (changes.currentRates || changes.rateChanges || changes.binanceRates || changes.lastUpdated || changes.fetchError) {
-    if (changes.currentRates) currentRates = changes.currentRates.newValue || {};
-    if (changes.rateChanges) rateChanges = changes.rateChanges.newValue || {};
-    if (changes.binanceRates) binanceRates = changes.binanceRates.newValue || {};
+  if (changes.currentRates || changes.rateChanges || changes.binanceRates || changes.lastUpdated || changes.fetchError ||
+      changes.eltoqueRates || changes.bccRates || changes.cadecaRates) {
     await loadData();
     renderAll();
   }
