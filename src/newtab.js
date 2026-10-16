@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 //  TASALO — New Tab Page
-//  Liquid Glass con tres paneles (ElToque + BCC + Combustible)
+//  Liquid Glass con tres paneles (ElToque + BCC + QvaPay)
 //  Con imports ES6 (type="module" en HTML) + Error handling
 // ═══════════════════════════════════════════════
 
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Escuchar cambios en storage
     browser.storage.onChanged.addListener((changes) => {
       console.log('[NewTab] Storage changed:', Object.keys(changes));
-      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.bccRates || changes.fuelRates) {
+      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.bccRates || changes.qvapayRates) {
         loadRates();
       }
       if (changes.yearState) {
@@ -262,7 +262,7 @@ async function loadRates() {
       'eltoqueRates',
       'bccRates',
       'cadecaRates',
-      'fuelRates'
+      'qvapayRates'
     ]);
 
     currentRates = data.currentRates || {};
@@ -270,12 +270,9 @@ async function loadRates() {
     binanceRates = data.binanceRates || {};
 
     // Use source-specific rates for each panel
-    const eltoqueRates = data.eltoqueRates || {};
-    const bccRates = data.bccRates || {};
-
-    renderElToquePanel(eltoqueRates);
-    renderBccPanel(bccRates);
-    renderFuelPanel(data.fuelRates || null);
+    renderElToquePanel(data.eltoqueRates || {});
+    renderBccPanel(data.bccRates || {});
+    renderQvapayPanel(data.qvapayRates || {});
     renderBinanceTicker();
 
   } catch (error) {
@@ -283,28 +280,22 @@ async function loadRates() {
   }
 }
 
-function renderElToquePanel(eltoqueRates) {
-  const grid = document.getElementById('eltoqueGrid');
-  if (!grid) return;
+// Orden de códigos: primero los conocidos según `order` y después el resto
+// (monedas o métodos nuevos que añada la API) por orden alfabético, para que
+// todo lo que traiga la fuente se muestre aunque la extensión no lo conozca.
+function sortCodes(codes, order) {
+  return [...codes].sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+}
 
-  // ElToque currencies (informal market)
-  const eltoqueCurrencies = ['EUR', 'USD', 'MLC', 'BTC', 'TRX', 'USDT'];
-
-  grid.textContent = '';
-
-  for (const currency of eltoqueCurrencies) {
-    const rate = eltoqueRates[currency];
-    if (rate === undefined) continue;
-
-    const change = rateChanges[currency] || 'neutral';
-    const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
-
-    const card = createRateCard(currency, rate, change, meta, 'CUP');
-    grid.appendChild(card);
-  }
-
-  // Update timestamp
-  const updEl = document.getElementById('eltoqueUpd');
+function setPanelTime(id) {
+  const updEl = document.getElementById(id);
   if (updEl) {
     updEl.textContent = new Date().toLocaleTimeString('es-CU', {
       hour: '2-digit',
@@ -313,118 +304,145 @@ function renderElToquePanel(eltoqueRates) {
   }
 }
 
-function renderBccPanel(bccRates) {
-  const grid = document.getElementById('bccGrid');
-  if (!grid) return;
-
-  // BCC currencies (official market)
-  const bccCurrencies = ['EUR', 'USD', 'CAD', 'GBP', 'CHF', 'MXN'];
-
+function showPanelEmpty(grid, text) {
   grid.textContent = '';
-
-  for (const currency of bccCurrencies) {
-    const rate = bccRates[currency];
-    if (rate === undefined) continue;
-
-    const change = rateChanges[currency] || 'neutral';
-    const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
-
-    const card = createRateCard(currency, rate, change, meta, 'CUP');
-    grid.appendChild(card);
-  }
-
-  // Update timestamp
-  const updEl = document.getElementById('bccUpd');
-  if (updEl) {
-    updEl.textContent = new Date().toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
+  const msg = document.createElement('div');
+  msg.className = 'pnl-empty';
+  msg.textContent = text;
+  grid.appendChild(msg);
 }
 
-// Combustible (GET /api/v1/tasas/fuel, cacheado por background.js).
-// Se cotiza como un RANGO de precios (mínimo-máximo), no como una tasa
-// única — se muestra tal cual para ser fiel a la realidad.
-const FUEL_META = {
-  'B-94':     { name: 'Gasolina B-94', flag: '⛽', short: 'B94' },
-  'B-90':     { name: 'Gasolina B-90', flag: '⛽', short: 'B90' },
-  'B-83':     { name: 'Gasolina B-83', flag: '⛽', short: 'B83' },
-  'Petroleo': { name: 'Petróleo/Diésel', flag: '🛢️', short: 'GO' },
-  'Gas_LP':   { name: 'Gas Licuado (LP)', flag: '🔥', short: 'GLP' },
-};
-const FUEL_ORDER = ['B-94', 'B-90', 'B-83', 'Petroleo', 'Gas_LP'];
-
-function renderFuelPanel(fuelData) {
-  const grid = document.getElementById('fuelGrid');
+// Panel de una fuente con una tasa por moneda (ElToque, BCC): muestra TODAS
+// las monedas que traiga la fuente. "CUP" es la moneda base, no una tarjeta.
+function renderCurrencyPanel(gridId, updId, sourceRates, emptyText) {
+  const grid = document.getElementById(gridId);
   if (!grid) return;
 
-  const rates = (fuelData && fuelData.rates) || {};
+  const codes = sortCodes(
+    Object.keys(sourceRates).filter(code => code !== 'CUP' && typeof sourceRates[code] === 'number'),
+    PREFERRED_ORDER
+  );
+
   grid.textContent = '';
 
-  for (const key of FUEL_ORDER) {
-    const item = rates[key];
-    if (!item) continue;
-
-    const buy = typeof item.buy === 'number' ? item.buy : null;
-    const sell = typeof item.sell === 'number' ? item.sell : null;
-    if (buy === null && sell === null) continue;
-
-    const meta = FUEL_META[key] || { name: key, flag: '⛽', short: key };
-    const change = item.change || 'neutral';
-    const unit = item.unit || 'CUP/L';
-
-    const card = createFuelCard(meta.short, buy, sell, change, meta, unit);
-    grid.appendChild(card);
-  }
-
-  if (!grid.children.length) {
-    for (let i = 0; i < 3; i++) {
-      const skel = document.createElement('div');
-      skel.className = 'skel';
-      skel.style.height = '80px';
-      grid.appendChild(skel);
+  if (!codes.length) {
+    showPanelEmpty(grid, emptyText);
+  } else {
+    for (const currency of codes) {
+      const change = rateChanges[currency] || 'neutral';
+      const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
+      grid.appendChild(createRateCard(currency, sourceRates[currency], change, meta, 'CUP'));
     }
   }
 
-  const updEl = document.getElementById('fuelUpd');
-  if (updEl) {
-    updEl.textContent = new Date().toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
+  setPanelTime(updId);
 }
 
-function createFuelCard(label, buy, sell, change, meta, unit) {
+function renderElToquePanel(eltoqueRates) {
+  renderCurrencyPanel('eltoqueGrid', 'eltoqueUpd', eltoqueRates, 'Sin datos de El Toque por ahora');
+}
+
+function renderBccPanel(bccRates) {
+  renderCurrencyPanel('bccGrid', 'bccUpd', bccRates, 'Sin datos del BCC por ahora');
+}
+
+// ═══════════════════════════════════════════════
+//  QvaPay P2P (guardado por background.js desde /tasas/latest → qvapay)
+//  Las claves son MÉTODOS DE PAGO, no monedas: cada valor es cuánto de ese
+//  método se obtiene por 1 USD de QvaPay. Se muestran TODOS los que traiga
+//  la API (los que no tienen operaciones recientes no vienen).
+// ═══════════════════════════════════════════════
+const QVAPAY_ORDER = ['CUP', 'MLC', 'TROPIPAY', 'ETECSA', 'ZELLE', 'CLASICA', 'BOLSATM', 'BANDECPREPAGO', 'SBERBANK'];
+const QVAPAY_META = {
+  CUP:           { name: 'Banco CUP',      short: 'CUP',    icon: '🏦' },
+  MLC:           { name: 'Banco MLC',      short: 'MLC',    icon: '💳' },
+  TROPIPAY:      { name: 'Tropipay',       short: 'TPAY',   icon: '💸' },
+  ETECSA:        { name: 'Saldo ETECSA',   short: 'ETECSA', icon: '📱' },
+  ZELLE:         { name: 'Zelle',          short: 'ZELLE',  icon: '⚡' },
+  CLASICA:       { name: 'Tarjeta Clásica', short: 'CLÁS',  icon: '💳' },
+  BOLSATM:       { name: 'Bolsa TM',       short: 'BOLSA',  icon: '👛' },
+  BANDECPREPAGO: { name: 'Bandec Prepago', short: 'BPREP',  icon: '💳' },
+  SBERBANK:      { name: 'Sberbank',       short: 'SBER',   icon: '🏦' },
+};
+
+function renderQvapayPanel(qvapayRates) {
+  const grid = document.getElementById('qvapayGrid');
+  if (!grid) return;
+
+  const codes = sortCodes(
+    Object.keys(qvapayRates).filter(code => qvapayRates[code] && typeof qvapayRates[code].rate === 'number'),
+    QVAPAY_ORDER
+  );
+
+  grid.textContent = '';
+
+  if (!codes.length) {
+    showPanelEmpty(grid, 'Sin datos de QvaPay por ahora');
+  } else {
+    for (const code of codes) {
+      const meta = QVAPAY_META[code] || { name: code, short: code, icon: '💱' };
+      grid.appendChild(createQvapayCard(qvapayRates[code], meta));
+    }
+  }
+
+  setPanelTime('qvapayUpd');
+}
+
+// Los valores de QvaPay pueden ser < 10 (Zelle ≈ 1.04, Tropipay ≈ 0.91):
+// con formatRate saldrían como "1.0", así que ahí se usan 2 decimales.
+function formatQv(value) {
+  return value < 10 ? value.toFixed(2) : formatRate(value);
+}
+
+function createQvapayCard(info, meta) {
+  const change = info.change || 'neutral';
   const card = document.createElement('div');
   card.className = `rcard ${change}`;
 
   const arrow = change === 'up' ? '▲' : change === 'down' ? '▼' : '—';
-
-  let valueText;
-  if (buy != null && sell != null && buy !== sell) {
-    valueText = `${formatRate(buy)}–${formatRate(sell)}`;
-  } else {
-    valueText = formatRate(sell ?? buy);
-  }
-
-  const sizeClass = getSizeClassForLength(valueText.length);
+  const arrowLabel = change === 'up' ? 'Sube' : change === 'down' ? 'Baja' : 'Sin cambio';
+  const valueText = formatQv(info.rate);
 
   const top = document.createElement('div'); top.className = 'rcard-top';
-  const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = label;
-  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.appendChild(createFlagNode(meta.flag, 15));
+  const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = meta.short;
+  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.icon;
+  ico.setAttribute('aria-hidden', 'true');
   top.appendChild(sym); top.appendChild(ico);
 
-  const val = document.createElement('div'); val.className = 'rcard-val ' + sizeClass; val.textContent = valueText;
-  const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = unit;
+  const val = document.createElement('div');
+  val.className = 'rcard-val ' + getSizeClassForLength(valueText.length);
+  val.textContent = valueText;
+
+  const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = 'por 1 USD';
+
+  card.appendChild(top); card.appendChild(val); card.appendChild(unitEl);
+
+  // Compra / venta: dos trozos que no se parten por dentro; si no caben en la
+  // misma línea, la venta baja a la siguiente (mejor que cortar con "…").
+  const sides = [];
+  if (typeof info.buy === 'number') sides.push(`C ${formatQv(info.buy)}`);
+  if (typeof info.sell === 'number') sides.push(`V ${formatQv(info.sell)}`);
+  if (sides.length) {
+    const bs = document.createElement('div');
+    bs.className = 'rcard-bs';
+    bs.setAttribute('role', 'group');
+    bs.setAttribute('aria-label', 'Compra y venta');
+    for (const text of sides) {
+      const part = document.createElement('span');
+      part.textContent = text;
+      bs.appendChild(part);
+    }
+    card.appendChild(bs);
+  }
+
+  card.title = meta.name;
 
   const bot = document.createElement('div'); bot.className = 'rcard-bot';
   const name = document.createElement('span'); name.className = 'rcard-name'; name.textContent = meta.name;
   const pct = document.createElement('span'); pct.className = 'rcard-pct'; pct.textContent = arrow;
+  pct.setAttribute('role', 'img'); pct.setAttribute('aria-label', arrowLabel);
   bot.appendChild(name); bot.appendChild(pct);
-
-  card.appendChild(top); card.appendChild(val); card.appendChild(unitEl); card.appendChild(bot);
+  card.appendChild(bot);
 
   return card;
 }

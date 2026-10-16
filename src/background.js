@@ -82,6 +82,7 @@ browser.runtime.onInstalled.addListener(async () => {
   }
 
   await setupAlarms();
+  await cleanupLegacyStorage();
   await fetchRates();
 });
 
@@ -93,8 +94,18 @@ browser.runtime.onStartup.addListener(async () => {
     log(`Settings loaded: sourcePreference=${cachedSettings.sourcePreference}`);
   }
   await setupAlarms();
+  await cleanupLegacyStorage();
   await fetchRates();
 });
+
+// Claves de versiones anteriores (panel Combustible, reemplazado por QvaPay).
+async function cleanupLegacyStorage() {
+  try {
+    await browser.storage.local.remove(['fuelRates', 'fuelRatesUpdated']);
+  } catch (error) {
+    log(`Legacy storage cleanup error: ${error.message}`, 'WARN');
+  }
+}
 
 // ═════════════════════════════════════════════════
 //  Alarms
@@ -182,6 +193,9 @@ async function fetchRates() {
     // precios reales de compra y venta — se preservan ambos en vez de
     // aplastarlos a un solo número (antes se perdía esta información).
     const cadecaRates  = parseCadecaRates(data.data.cadeca  || {});
+    // QvaPay: métodos de pago P2P (no monedas). Se guarda aparte y no entra en
+    // las tasas planas, porque "CUP"/"MLC" existen también como moneda.
+    const qvapayRates  = parseQvapayRates(data.data.qvapay);
     const binanceRates = extractBinanceRates(data.data.binance);
 
     // Vista plana de CADECA (solo números) para badge/omnibox/cálculo de cambios
@@ -211,20 +225,21 @@ async function fetchRates() {
       eltoqueRates,
       bccRates,
       cadecaRates,
+      qvapayRates,
       rateChanges:   changes,
       binanceRates,
       lastUpdated:   now,
       fetchError:    null,
     });
 
-    log(`✅ Saved ${Object.keys(primaryRatesFlat).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance`);
+    log(`✅ Saved ${Object.keys(primaryRatesFlat).length} rates (${sourcePreference}), ${Object.keys(binanceRates).length} binance, ${Object.keys(qvapayRates).length} qvapay`);
 
     // Update badge
     updateBadge();
 
-    // Frase del año + tasas de combustible: complementarios, no bloquean
-    // ni rompen el fetch principal si fallan.
-    await Promise.allSettled([fetchYearState(), fetchFuelRates()]);
+    // Frase del año: complementaria, no bloquea ni rompe el fetch principal
+    // si falla.
+    await Promise.allSettled([fetchYearState()]);
 
     // Broadcast to tabs
     broadcastToTabs({
@@ -263,21 +278,38 @@ async function fetchYearState() {
   }
 }
 
-// Tasas de combustible, rango de precios (GET /api/v1/tasas/fuel)
-async function fetchFuelRates() {
-  try {
-    const apiUrl = cachedSettings.apiUrl || DEFAULT_API_URL;
-    const response = await fetch(`${apiUrl}/api/v1/tasas/fuel`, {
-      headers: { 'Accept': 'application/json' }
-    });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    if (data && data.rates) {
-      await browser.storage.local.set({ fuelRates: data, fuelRatesUpdated: new Date().toISOString() });
-    }
-  } catch (error) {
-    log(`Fuel rates fetch error: ${error.message}`, 'WARN');
+// QvaPay P2P (viene en GET /api/v1/tasas/latest → data.qvapay).
+// Cada clave es un MÉTODO DE PAGO (CUP, MLC, TROPIPAY, ETECSA, ZELLE...), no una
+// moneda, y el valor es "cuánto de ese método por 1 USD". La API da
+// {rate (promedio), buy, sell, change, prev_rate}.
+function parseQvapayRates(sourceData) {
+  const rates = {};
+  if (!sourceData || typeof sourceData !== 'object') return rates;
+
+  const num = (v) => {
+    const n = typeof v === 'number' ? v : (v != null ? parseFloat(String(v).replace(',', '.')) : NaN);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  for (const [key, value] of Object.entries(sourceData)) {
+    if (!value || typeof value !== 'object') continue;
+
+    const buy  = num(value.buy);
+    const sell = num(value.sell);
+    const avg  = buy !== null && sell !== null ? (buy + sell) / 2 : (buy ?? sell);
+    const rate = num(value.rate) ?? avg;
+
+    if (rate === null) continue; // sin ningún dato: no se muestra (no se interpola)
+
+    rates[key.toUpperCase()] = {
+      rate,
+      buy,
+      sell,
+      change: value.change || 'neutral',
+    };
   }
+
+  return rates;
 }
 
 function extractBinanceRates(binanceData) {
