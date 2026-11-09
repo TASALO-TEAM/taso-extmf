@@ -18,7 +18,7 @@ const DEFAULT_TICKER_CURRENCIES = ['BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'S
 const DEFAULT_SETTINGS = {
   apiUrl: DEFAULT_API_URL,
   updateInterval: 5,
-  sourcePreference: 'eltoque', // 'eltoque' | 'bcc' | 'cadeca'
+  sourcePreference: 'eltoque', // 'eltoque' | 'bcc'
   newTabEnabled: true,
   tickerEnabled: true,
   tickerCurrencies: [...DEFAULT_TICKER_CURRENCIES],
@@ -163,21 +163,10 @@ async function fetchRates() {
     // Extract rates per source (sin mezclar, cada fuente por separado)
     const eltoqueRates = parseSourceRates(data.data.eltoque || {});
     const bccRates     = parseSourceRates(data.data.bcc     || {});
-    // CADECA no trae "rate": son precios reales de compra y venta. Se
-    // preservan ambos ({buy, sell, rate, change}) para mostrarlos fielmente.
-    const cadecaRates  = parseCadecaRates(data.data.cadeca  || {});
     const binanceRates = extractBinanceRates(data.data.binance);
 
-    // Vista plana de CADECA (solo números) para badge y cálculo de cambios
-    const cadecaFlat = {};
-    for (const [cur, info] of Object.entries(cadecaRates)) {
-      cadecaFlat[cur] = info.rate;
-    }
-
     const sourcePreference = cachedSettings.sourcePreference || 'eltoque';
-    const primaryRatesFlat = sourcePreference === 'bcc'    ? bccRates
-                           : sourcePreference === 'cadeca' ? cadecaFlat
-                           : eltoqueRates;
+    const primaryRatesFlat = sourcePreference === 'bcc' ? bccRates : eltoqueRates;
 
     // Tras una suspensión cachedRates está vacío: recuperar las tasas previas
     // desde storage (solo si eran de la misma fuente) para no marcar todo "new".
@@ -205,7 +194,6 @@ async function fetchRates() {
       previousRates,
       eltoqueRates,
       bccRates,
-      cadecaRates,   // objetos ricos {buy,sell,rate,change} para el popup
       rateChanges:   changes,
       binanceRates,
       lastUpdated:   now,
@@ -261,33 +249,6 @@ function parseSourceRates(sourceData) {
         rates[currency] = rate;
       }
     }
-  }
-
-  return rates;
-}
-
-// CADECA: la API devuelve {buy, sell, change, prev_rate} por moneda (SIN
-// campo "rate"). Se preservan compra y venta en vez de aplastarlas a un número.
-function parseCadecaRates(sourceData) {
-  const rates = {};
-  if (!sourceData || typeof sourceData !== 'object') return rates;
-
-  for (const [key, value] of Object.entries(sourceData)) {
-    if (!value || typeof value !== 'object') continue;
-
-    const buy  = typeof value.buy === 'number' ? value.buy : (value.buy != null ? parseFloat(value.buy) : null);
-    const sell = typeof value.sell === 'number' ? value.sell : (value.sell != null ? parseFloat(value.sell) : null);
-    const buyOk  = buy  !== null && !isNaN(buy);
-    const sellOk = sell !== null && !isNaN(sell);
-
-    if (!buyOk && !sellOk) continue;
-
-    rates[key.toUpperCase()] = {
-      buy:  buyOk ? buy : null,
-      sell: sellOk ? sell : null,
-      rate: sellOk ? sell : buy,
-      change: value.change || 'neutral',
-    };
   }
 
   return rates;
@@ -406,16 +367,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       cachedSettings = { ...cachedSettings, ...msg.settings };
 
       // Si cambió la fuente, actualizar currentRates desde los datos ya cacheados
-      const stored = await browser.storage.local.get(['eltoqueRates', 'bccRates', 'cadecaRates']);
+      const stored = await browser.storage.local.get(['eltoqueRates', 'bccRates']);
       const pref = cachedSettings.sourcePreference || 'eltoque';
       let primaryRatesFlat;
       if (pref === 'bcc') {
         primaryRatesFlat = stored.bccRates || {};
-      } else if (pref === 'cadeca') {
-        primaryRatesFlat = {};
-        for (const [cur, info] of Object.entries(stored.cadecaRates || {})) {
-          primaryRatesFlat[cur] = (info && typeof info === 'object') ? info.rate : info;
-        }
       } else {
         primaryRatesFlat = stored.eltoqueRates || {};
       }

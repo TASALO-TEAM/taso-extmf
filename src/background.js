@@ -33,7 +33,7 @@ const CURRENCY_META = {
 const DEFAULT_SETTINGS = {
   apiUrl: DEFAULT_API_URL,
   updateInterval: 5,
-  sourcePreference: 'eltoque', // 'eltoque' | 'bcc' | 'cadeca'
+  sourcePreference: 'eltoque', // 'eltoque' | 'bcc'
   newTabEnabled: true,
   omniboxEnabled: true,
   tickerEnabled: true,
@@ -90,6 +90,7 @@ browser.runtime.onStartup.addListener(async () => {
   log('Browser started');
   const stored = await browser.storage.local.get('settings');
   if (stored.settings) {
+  if (cachedSettings.sourcePreference === 'cadeca') cachedSettings.sourcePreference = 'eltoque'; // CADECA fue eliminada
     cachedSettings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...stored.settings };
     log(`Settings loaded: sourcePreference=${cachedSettings.sourcePreference}`);
   }
@@ -136,6 +137,7 @@ browser.alarms.onAlarm.addListener(async (alarm) => {
     // variable en memoria puede quedar desactualizada entre despertares.
     const stored = await browser.storage.local.get('settings');
     if (stored.settings) {
+  if (cachedSettings.sourcePreference === 'cadeca') cachedSettings.sourcePreference = 'eltoque'; // CADECA fue eliminada
       cachedSettings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...stored.settings };
     }
     await fetchRates();
@@ -189,26 +191,14 @@ async function fetchRates() {
     // Extract rates per source (sin mezclar, cada fuente por separado)
     const eltoqueRates = parseSourceRates(data.data.eltoque || {});
     const bccRates     = parseSourceRates(data.data.bcc     || {});
-    // FIX: CADECA no trae un campo "rate" en la API (solo buy/sell), son
-    // precios reales de compra y venta — se preservan ambos en vez de
-    // aplastarlos a un solo número (antes se perdía esta información).
-    const cadecaRates  = parseCadecaRates(data.data.cadeca  || {});
     // QvaPay: métodos de pago P2P (no monedas). Se guarda aparte y no entra en
     // las tasas planas, porque "CUP"/"MLC" existen también como moneda.
     const qvapayRates  = parseQvapayRates(data.data.qvapay);
     const binanceRates = extractBinanceRates(data.data.binance);
 
-    // Vista plana de CADECA (solo números) para badge/omnibox/cálculo de cambios
-    const cadecaFlat = {};
-    for (const [cur, info] of Object.entries(cadecaRates)) {
-      cadecaFlat[cur] = info.rate;
-    }
-
     // Seleccionar tasas activas según preferencia del usuario
     const sourcePreference = cachedSettings.sourcePreference || 'eltoque';
-    const primaryRatesFlat = sourcePreference === 'bcc'    ? bccRates
-                           : sourcePreference === 'cadeca' ? cadecaFlat
-                           : eltoqueRates;
+    const primaryRatesFlat = sourcePreference === 'bcc' ? bccRates : eltoqueRates;
 
     const changes = calculateChanges(primaryRatesFlat, cachedRates);
 
@@ -217,14 +207,12 @@ async function fetchRates() {
     cachedChanges = changes;
     cachedBinanceRates = binanceRates;
 
-    // Save to storage (currentRates = fuente preferida, más cada fuente por separado;
-    // cadecaRates guarda los objetos ricos {buy,sell,rate,change} para el popup)
+    // Save to storage (currentRates = fuente preferida, cada fuente por separado)
     const now = new Date().toISOString();
     await browser.storage.local.set({
       currentRates:  primaryRatesFlat,
       eltoqueRates,
       bccRates,
-      cadecaRates,
       qvapayRates,
       rateChanges:   changes,
       binanceRates,
@@ -351,32 +339,6 @@ function parseSourceRates(sourceData) {
   return rates;
 }
 
-// CADECA: la API devuelve {buy, sell, change, prev_rate} por moneda (SIN
-// campo "rate"), porque son precios de compra y venta reales, no una
-// tasa única. Se preservan ambos valores para mostrarlos fielmente.
-function parseCadecaRates(sourceData) {
-  const rates = {};
-  if (!sourceData || typeof sourceData !== 'object') return rates;
-
-  for (const [key, value] of Object.entries(sourceData)) {
-    if (!value || typeof value !== 'object') continue;
-
-    const buy  = typeof value.buy === 'number' ? value.buy : (value.buy != null ? parseFloat(value.buy) : null);
-    const sell = typeof value.sell === 'number' ? value.sell : (value.sell != null ? parseFloat(value.sell) : null);
-
-    if (buy === null && sell === null) continue;
-
-    rates[key.toUpperCase()] = {
-      buy,
-      sell,
-      rate: sell ?? buy,
-      change: value.change || 'neutral',
-    };
-  }
-
-  return rates;
-}
-
 function extractRateValue(item) {
   if (typeof item === 'number') return item;
   if (typeof item === 'string') {
@@ -478,16 +440,11 @@ browser.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.type === 'UPDATE_SETTINGS') {
     cachedSettings = { ...cachedSettings, ...msg.settings };
-    browser.storage.local.get(['eltoqueRates', 'bccRates', 'cadecaRates']).then(stored => {
+    browser.storage.local.get(['eltoqueRates', 'bccRates']).then(stored => {
       const pref = cachedSettings.sourcePreference || 'eltoque';
       let primaryRatesFlat;
       if (pref === 'bcc') {
         primaryRatesFlat = stored.bccRates || {};
-      } else if (pref === 'cadeca') {
-        primaryRatesFlat = {};
-        for (const [cur, info] of Object.entries(stored.cadecaRates || {})) {
-          primaryRatesFlat[cur] = (info && typeof info === 'object') ? info.rate : info;
-        }
       } else {
         primaryRatesFlat = stored.eltoqueRates || {};
       }

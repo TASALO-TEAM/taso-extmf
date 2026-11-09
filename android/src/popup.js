@@ -15,7 +15,7 @@ let tickerOpen = false;
 let settingsOpen = false;
 let listenersAttached = false;
 
-const SOURCE_NAMES = { eltoque: 'El Toque', bcc: 'BCC', cadeca: 'CADECA' };
+const SOURCE_NAMES = { eltoque: 'El Toque', bcc: 'BCC' };
 
 // ── Debounce ───────────────────────────────────
 function debounce(fn, delay) {
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadData() {
   const data = await browser.storage.local.get([
     'settings', 'currentRates',
-    'eltoqueRates', 'bccRates', 'cadecaRates',
+    'eltoqueRates', 'bccRates',
     'previousRates', 'rateChanges', 'binanceRates', 'lastUpdated', 'fetchError'
   ]);
   settings = data.settings ?? {};
@@ -92,7 +92,6 @@ async function loadData() {
 
 function selectRatesForSource(pref, data) {
   if (pref === 'bcc')     return data.bccRates    || {};
-  if (pref === 'cadeca')  return data.cadecaRates || {};
   if (pref === 'eltoque') return data.eltoqueRates || {};
   return data.currentRates || {};
 }
@@ -107,7 +106,7 @@ function updateFooter() {
 
   const footerSource = document.querySelector('.footer-source');
   if (footerSource) {
-    const names = { eltoque: 'El Toque (Informal)', bcc: 'BCC (Oficial)', cadeca: 'CADECA' };
+    const names = { eltoque: 'El Toque (Informal)', bcc: 'BCC (Oficial)' };
     footerSource.textContent = '';
     const dot = document.createElement('span');
     dot.className = 'footer-dot';
@@ -138,7 +137,7 @@ function renderAll() {
 }
 
 function getSourcePreference() {
-  return settings.sourcePreference || 'eltoque';
+  return settings.sourcePreference === 'bcc' ? 'bcc' : 'eltoque'; // 'cadeca' (eliminada) cae a ElToque
 }
 
 // Se derivan de las tasas reales de la fuente activa (no de listas fijas)
@@ -169,7 +168,6 @@ function renderGrid() {
   const currencies = getSortedCurrencies();
   const showFlags = settings.showCurrencyFlag !== false;
   const fontSize = settings.fontSize ?? 13;
-  const isCadeca = getSourcePreference() === 'cadeca';
 
   const cols = currencies.length <= 2 ? 'cols-2' : '';
   grid.className = 'rates-grid ' + cols;
@@ -187,27 +185,13 @@ function renderGrid() {
 
     let valueText, subLabel, diffText, valFontSize;
 
-    if (isCadeca && val && typeof val === 'object') {
-      // CADECA son precios reales de compra y venta, no una tasa única
-      const buy = val.buy;
-      const sell = val.sell;
-      if (buy != null && sell != null && buy !== sell) {
-        valueText = `${fmtRate(buy)}–${fmtRate(sell)}`;
-      } else {
-        valueText = fmtRate(sell ?? buy ?? 0);
-      }
-      subLabel = 'Compra–Venta';
-      diffText = arrow;
-      valFontSize = fontSize + 1;
-    } else {
-      const numVal = typeof val === 'number' ? val : (val && typeof val.rate === 'number' ? val.rate : 0);
-      const prev = previousRates[cur];
-      const diff = typeof prev === 'number' ? numVal - prev : null;
-      valueText = fmtRate(numVal);
-      subLabel = meta.name;
-      diffText = arrow + (diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : '');
-      valFontSize = fontSize + 4;
-    }
+    const numVal = typeof val === 'number' ? val : (val && typeof val.rate === 'number' ? val.rate : 0);
+    const prev = previousRates[cur];
+    const diff = typeof prev === 'number' ? numVal - prev : null;
+    valueText = fmtRate(numVal);
+    subLabel = meta.name;
+    diffText = arrow + (diff !== null && diff !== 0 ? (diff > 0 ? '+' : '') + diff.toFixed(1) : '');
+    valFontSize = fontSize + 4;
 
     const top = document.createElement('div');
     top.className = 'rate-top';
@@ -484,7 +468,7 @@ function attachListeners() {
 
 const debouncedStorageUpdate = debounce(async (changes) => {
   if (changes.currentRates || changes.rateChanges || changes.binanceRates || changes.lastUpdated || changes.fetchError ||
-      changes.eltoqueRates || changes.bccRates || changes.cadecaRates) {
+      changes.eltoqueRates || changes.bccRates) {
     await loadData();
     renderAll();
   }
