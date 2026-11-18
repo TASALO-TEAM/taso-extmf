@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Escuchar cambios en storage
     browser.storage.onChanged.addListener((changes) => {
       console.log('[NewTab] Storage changed:', Object.keys(changes));
-      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.bccRates || changes.qvapayRates) {
+      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.eltoqueMeta || changes.bccRates || changes.qvapayRates) {
         loadRates();
       }
       if (changes.yearState) {
@@ -260,6 +260,7 @@ async function loadRates() {
       'binanceRates',
       'lastUpdated',
       'eltoqueRates',
+      'eltoqueMeta',
       'bccRates',
       'qvapayRates'
     ]);
@@ -269,7 +270,7 @@ async function loadRates() {
     binanceRates = data.binanceRates || {};
 
     // Use source-specific rates for each panel
-    renderElToquePanel(data.eltoqueRates || {});
+    renderElToquePanel(data.eltoqueRates || {}, data.eltoqueMeta || {});
     renderBccPanel(data.bccRates || {});
     renderQvapayPanel(data.qvapayRates || {});
     renderBinanceTicker();
@@ -337,8 +338,69 @@ function renderCurrencyPanel(gridId, updId, sourceRates, emptyText) {
   setPanelTime(updId);
 }
 
-function renderElToquePanel(eltoqueRates) {
-  renderCurrencyPanel('eltoqueGrid', 'eltoqueUpd', eltoqueRates, 'Sin datos de El Toque por ahora');
+const ELTOQUE_GROUPS = [
+  { id: 'main', title: 'Principales' },
+  { id: 'crypto', title: 'Cripto' },
+  { id: 'other', title: 'Otras monedas' },
+];
+
+function appendRateCards(container, codes, rates, meta) {
+  for (const currency of codes) {
+    const change = rateChanges[currency] || 'neutral';
+    const local = CURRENCY_META[currency];
+    const cardMeta = local || { name: (meta[currency] && meta[currency].name) || currency, flag: '\u{1F4B1}' };
+    container.appendChild(createRateCard(currency, rates[currency], change, cardMeta, 'CUP'));
+  }
+  if (typeof attachFlagFallbacks === 'function') attachFlagFallbacks(container);
+}
+
+// El Toque: si la API manda grupos, secciones Principales / Cripto / Otras con las
+// monedas de mercado y, plegadas en "Mostrar mas", las de referencia (0 ofertas).
+// Sin metadatos (API vieja) se ve como antes: lista plana.
+function renderElToquePanel(eltoqueRates, eltoqueMeta) {
+  const meta = eltoqueMeta || {};
+  const grid = document.getElementById('eltoqueGrid');
+  const oldMore = document.getElementById('eltoqueMore');
+  if (oldMore) oldMore.remove();
+
+  const codes = Object.keys(eltoqueRates).filter(
+    c => c !== 'CUP' && typeof eltoqueRates[c] === 'number'
+  );
+  if (!grid || !codes.length || !codes.some(c => meta[c])) {
+    renderCurrencyPanel('eltoqueGrid', 'eltoqueUpd', eltoqueRates, 'Sin datos de El Toque por ahora');
+    return;
+  }
+
+  const byOrder = (a, b) => ((meta[a] || {}).order ?? 999) - ((meta[b] || {}).order ?? 999) || a.localeCompare(b);
+  const isRef = c => meta[c] && meta[c].tier === 'reference';
+  const market = codes.filter(c => !isRef(c));
+  const reference = codes.filter(isRef).sort(byOrder);
+
+  grid.innerHTML = '';
+  for (const { id, title } of ELTOQUE_GROUPS) {
+    const inGroup = market.filter(c => ((meta[c] || {}).group || 'other') === id).sort(byOrder);
+    if (!inGroup.length) continue;
+    const h = document.createElement('div');
+    h.className = 'pnl-group-title';
+    h.textContent = title;
+    grid.appendChild(h);
+    appendRateCards(grid, inGroup, eltoqueRates, meta);
+  }
+
+  if (reference.length) {
+    const details = document.createElement('details');
+    details.id = 'eltoqueMore';
+    details.className = 'pnl-more';
+    const summary = document.createElement('summary');
+    summary.textContent = `Mostrar m\u00e1s (${reference.length})`;
+    const refGrid = document.createElement('div');
+    refGrid.className = 'rgrid';
+    details.append(summary, refGrid);
+    appendRateCards(refGrid, reference, eltoqueRates, meta);
+    grid.insertAdjacentElement('afterend', details);
+  }
+
+  setPanelTime('eltoqueUpd');
 }
 
 function renderBccPanel(bccRates) {
