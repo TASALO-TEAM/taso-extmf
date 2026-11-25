@@ -1,64 +1,44 @@
 // ═══════════════════════════════════════════════
-//  TASALO — New Tab Page
-//  Liquid Glass con tres paneles (ElToque + BCC + QvaPay)
-//  Con imports ES6 (type="module" en HTML) + Error handling
+//  TASALO — New Tab Page (Firefox)
+//  Las tasas las pinta rates-view.js (barra de fuentes + tarjetas con gráfico + detalle, como la app y Android).
+//  Aquí quedan el reloj, el progreso del año, el ticker de Binance y el tema. Sin innerHTML (AMO lo marca).
 // ═══════════════════════════════════════════════
 
-import { PREFERRED_ORDER, CURRENCY_META, PRODUCTION_API_URL, DEFAULT_TICKER_CURRENCIES, createFlagNode, browser } from './constants.js';
+import { DEFAULT_TICKER_CURRENCIES, browser } from './constants.js';
+import { applyAppearance } from './palettes.js';
+import { mountRates } from './rates-view.js';
 
-// Estado global
-let currentRates = {};
-let rateChanges = {};
 let binanceRates = {};
 let settings = {};
 
 // ═══════════════════════════════════════════════
-//  Init - CON MANEJO DE ERRORES ROBUSTO
+//  Init
 // ═══════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    console.log('[NewTab] DOMContentLoaded - starting init');
-
     await loadSettings();
-    console.log('[NewTab] Settings loaded:', settings);
-
+    // Nueva pestaña desactivada: newtab-init.js ya la está cambiando por la nativa del navegador; no se monta nada.
+    if (settings.newTabEnabled === false) return;
     setupTheme();
-    console.log('[NewTab] Theme setup done');
-
     setupClock();
-    console.log('[NewTab] Clock setup done');
-
     await setupYearProgress();
-    console.log('[NewTab] Year progress setup done');
-
     setFooterVersion();
-    console.log('[NewTab] Footer version set');
-
+    mountRates(document.getElementById('ratesRoot'), { segHost: document.getElementById('srcHost') });
     await loadRates();
-    console.log('[NewTab] Rates loaded');
-
     setupRefresh();
-    console.log('[NewTab] Refresh setup done');
 
-    // Escuchar cambios en storage
     browser.storage.onChanged.addListener((changes) => {
-      console.log('[NewTab] Storage changed:', Object.keys(changes));
-      if (changes.currentRates || changes.rateChanges || changes.eltoqueRates || changes.eltoqueMeta || changes.bccRates || changes.qvapayRates) {
-        loadRates();
-      }
-      if (changes.yearState) {
-        setupYearProgress();
-      }
+      if (changes.binanceRates) loadRates();
+      if (changes.yearState) setupYearProgress();
       if (changes.settings) {
         settings = changes.settings.newValue || {};
+        applyAppearance({ palette: settings.palette, theme: settings.colorBg });
+        syncThemeButtons();
         renderBinanceTicker();
       }
     });
-
-    console.log('[NewTab] ✅ Initialization complete');
   } catch (error) {
-    console.error('[NewTab] ❌ Initialization error:', error);
-    console.error('[NewTab] Stack:', error.stack);
+    console.error('[NewTab] Initialization error:', error);
   }
 });
 
@@ -77,54 +57,23 @@ function setFooterVersion() {
   }
 }
 
-function setupTheme() {
-  try {
-    const theme = settings.colorBg || 'auto';
-    applyTheme(theme);
-
-    // Theme toggle buttons
-    const themeBtns = document.querySelectorAll('.theme-btn');
-    if (!themeBtns || themeBtns.length === 0) {
-      console.warn('[NewTab] No theme buttons found');
-      return;
-    }
-
-    themeBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        applyTheme(btn.dataset.theme);
-
-        // Guardar preferencia
-        settings.colorBg = btn.dataset.theme;
-        browser.storage.local.set({ settings });
-      });
-    });
-  } catch (error) {
-    console.error('[NewTab] Error in setupTheme:', error);
-  }
+function syncThemeButtons() {
+  const active = settings.colorBg || 'auto';
+  document.querySelectorAll('.theme-btn').forEach((b) => b.classList.toggle('active', b.dataset.theme === active));
 }
 
-function applyTheme(theme) {
-  try {
-    // FIX: antes, para 'dark' se añadía la clase 'light' y en la línea
-    // siguiente se quitaba — era un no-op, el botón "Dark" no hacía nada.
-    if (theme === 'dark') {
-      document.documentElement.classList.remove('light');
-    } else if (theme === 'light') {
-      document.documentElement.classList.add('light');
-    } else {
-      // Auto - usar preferencia del sistema
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      if (prefersDark) {
-        document.documentElement.classList.remove('light');
-      } else {
-        document.documentElement.classList.add('light');
-      }
-    }
-  } catch (error) {
-    console.error('[NewTab] Error in applyTheme:', error);
-  }
+function setupTheme() {
+  applyAppearance({ palette: settings.palette, theme: settings.colorBg });
+  syncThemeButtons();
+
+  document.querySelectorAll('.theme-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settings.colorBg = btn.dataset.theme;
+      applyAppearance({ theme: settings.colorBg });
+      syncThemeButtons();
+      browser.storage.local.set({ settings });
+    });
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -141,36 +90,24 @@ function updateClock() {
   const dateStr = document.getElementById('dateStr');
 
   if (clock) {
-    clock.textContent = now.toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
+    clock.textContent = now.toLocaleTimeString('es-CU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
-
   if (dateStr) {
-    dateStr.textContent = now.toLocaleDateString('es-CU', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    dateStr.textContent = now.toLocaleDateString('es-CU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   }
 }
 
 // ═══════════════════════════════════════════════
-//  Year Progress + Frase del día (usa GET /api/v1/year/state
-//  cacheado por background.js; si no hay datos o falla, cae al
-//  cálculo local, sin frase).
+//  Year Progress + Frase del día (GET /api/v1/year/state cacheado por background.js;
+//  si no hay datos o falla, cae al cálculo local, sin frase).
 // ═══════════════════════════════════════════════
 async function setupYearProgress() {
   try {
     const now = new Date();
     const year = now.getFullYear();
 
-    // Días transcurridos: siempre se calcula localmente (es determinista).
-    // percent y daysRemaining vienen de la API cuando está disponible,
-    // para que coincidan exactamente con /y del bot.
+    // Días transcurridos: siempre se calculan en local (es determinista).
+    // percent y daysRemaining vienen de la API cuando está disponible, para coincidir con /y del bot.
     const yearStart = new Date(year, 0, 1);
     const yearEnd = new Date(year + 1, 0, 1);
     const totalMs = yearEnd - yearStart;
@@ -195,45 +132,31 @@ async function setupYearProgress() {
 
     const weeksLeft = Math.ceil(daysRemaining / 7);
 
-    // Update UI
     const progressEl = document.getElementById('yearProgress');
     const pctEl = document.getElementById('ywPct');
     const daysPassedEl = document.getElementById('daysPassed');
     const daysRemainingEl = document.getElementById('daysRemaining');
     const weeksLeftEl = document.getElementById('weeksLeft');
-    const mticks = document.querySelectorAll('.mtick');
 
-    if (progressEl) {
-      setTimeout(() => {
-        progressEl.style.width = `${percent.toFixed(1)}%`;
-      }, 100);
-    }
+    if (progressEl) setTimeout(() => { progressEl.style.width = `${percent.toFixed(1)}%`; }, 100);
 
     if (pctEl) {
-      pctEl.textContent = '';
-      pctEl.appendChild(document.createTextNode(percent.toFixed(1) + '% '));
-      const smallEl = document.createElement('small');
-      smallEl.textContent = 'completado';
-      pctEl.appendChild(smallEl);
+      const small = document.createElement('small');
+      small.textContent = 'completado';
+      pctEl.replaceChildren(document.createTextNode(`${percent.toFixed(1)}% `), small);
     }
 
     if (daysPassedEl) daysPassedEl.textContent = daysPassed;
     if (daysRemainingEl) daysRemainingEl.textContent = daysRemaining;
     if (weeksLeftEl) weeksLeftEl.textContent = weeksLeft;
 
-    // Highlight current month
     const currentMonth = now.getMonth();
-
-    mticks.forEach((tick, index) => {
+    document.querySelectorAll('.mtick').forEach((tick, index) => {
       tick.classList.remove('past', 'now');
-      if (index < currentMonth) {
-        tick.classList.add('past');
-      } else if (index === currentMonth) {
-        tick.classList.add('now');
-      }
+      if (index < currentMonth) tick.classList.add('past');
+      else if (index === currentMonth) tick.classList.add('now');
     });
 
-    // Frase del día
     const quoteBlock = document.getElementById('ywQuote');
     const quoteTextEl = document.getElementById('ywQuoteText');
     if (quoteBlock && quoteTextEl) {
@@ -250,309 +173,16 @@ async function setupYearProgress() {
 }
 
 // ═══════════════════════════════════════════════
-//  Load Rates
+//  Ticker de Binance
 // ═══════════════════════════════════════════════
 async function loadRates() {
   try {
-    const data = await browser.storage.local.get([
-      'currentRates',
-      'rateChanges',
-      'binanceRates',
-      'lastUpdated',
-      'eltoqueRates',
-      'eltoqueMeta',
-      'bccRates',
-      'qvapayRates'
-    ]);
-
-    currentRates = data.currentRates || {};
-    rateChanges = data.rateChanges || {};
+    const data = await browser.storage.local.get('binanceRates');
     binanceRates = data.binanceRates || {};
-
-    // Use source-specific rates for each panel
-    renderElToquePanel(data.eltoqueRates || {}, data.eltoqueMeta || {});
-    renderBccPanel(data.bccRates || {});
-    renderQvapayPanel(data.qvapayRates || {});
     renderBinanceTicker();
-
   } catch (error) {
     console.error('Error loading rates:', error);
   }
-}
-
-// Orden de códigos: primero los conocidos según `order` y después el resto
-// (monedas o métodos nuevos que añada la API) por orden alfabético, para que
-// todo lo que traiga la fuente se muestre aunque la extensión no lo conozca.
-function sortCodes(codes, order) {
-  return [...codes].sort((a, b) => {
-    const ia = order.indexOf(a);
-    const ib = order.indexOf(b);
-    if (ia === -1 && ib === -1) return a.localeCompare(b);
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
-}
-
-function setPanelTime(id) {
-  const updEl = document.getElementById(id);
-  if (updEl) {
-    updEl.textContent = new Date().toLocaleTimeString('es-CU', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  }
-}
-
-function showPanelEmpty(grid, text) {
-  grid.textContent = '';
-  const msg = document.createElement('div');
-  msg.className = 'pnl-empty';
-  msg.textContent = text;
-  grid.appendChild(msg);
-}
-
-// Panel de una fuente con una tasa por moneda (ElToque, BCC): muestra TODAS
-// las monedas que traiga la fuente. "CUP" es la moneda base, no una tarjeta.
-function renderCurrencyPanel(gridId, updId, sourceRates, emptyText) {
-  const grid = document.getElementById(gridId);
-  if (!grid) return;
-
-  const codes = sortCodes(
-    Object.keys(sourceRates).filter(code => code !== 'CUP' && typeof sourceRates[code] === 'number'),
-    PREFERRED_ORDER
-  );
-
-  grid.textContent = '';
-
-  if (!codes.length) {
-    showPanelEmpty(grid, emptyText);
-  } else {
-    for (const currency of codes) {
-      const change = rateChanges[currency] || 'neutral';
-      const meta = CURRENCY_META[currency] || { name: currency, flag: '💱' };
-      grid.appendChild(createRateCard(currency, sourceRates[currency], change, meta, 'CUP'));
-    }
-  }
-
-  setPanelTime(updId);
-}
-
-const ELTOQUE_GROUPS = [
-  { id: 'main', title: 'Principales' },
-  { id: 'crypto', title: 'Cripto' },
-  { id: 'other', title: 'Otras monedas' },
-];
-
-function appendRateCards(container, codes, rates, meta) {
-  for (const currency of codes) {
-    const change = rateChanges[currency] || 'neutral';
-    const local = CURRENCY_META[currency];
-    const cardMeta = local || { name: (meta[currency] && meta[currency].name) || currency, flag: '\u{1F4B1}' };
-    container.appendChild(createRateCard(currency, rates[currency], change, cardMeta, 'CUP'));
-  }
-  if (typeof attachFlagFallbacks === 'function') attachFlagFallbacks(container);
-}
-
-// El Toque: si la API manda grupos, secciones Principales / Cripto / Otras con las
-// monedas de mercado y, plegadas en "Mostrar mas", las de referencia (0 ofertas).
-// Sin metadatos (API vieja) se ve como antes: lista plana.
-function renderElToquePanel(eltoqueRates, eltoqueMeta) {
-  const meta = eltoqueMeta || {};
-  const grid = document.getElementById('eltoqueGrid');
-  const oldMore = document.getElementById('eltoqueMore');
-  if (oldMore) oldMore.remove();
-
-  const codes = Object.keys(eltoqueRates).filter(
-    c => c !== 'CUP' && typeof eltoqueRates[c] === 'number'
-  );
-  if (!grid || !codes.length || !codes.some(c => meta[c])) {
-    renderCurrencyPanel('eltoqueGrid', 'eltoqueUpd', eltoqueRates, 'Sin datos de El Toque por ahora');
-    return;
-  }
-
-  const byOrder = (a, b) => ((meta[a] || {}).order ?? 999) - ((meta[b] || {}).order ?? 999) || a.localeCompare(b);
-  const isRef = c => meta[c] && meta[c].tier === 'reference';
-  const market = codes.filter(c => !isRef(c));
-  const reference = codes.filter(isRef).sort(byOrder);
-
-  grid.innerHTML = '';
-  for (const { id, title } of ELTOQUE_GROUPS) {
-    const inGroup = market.filter(c => ((meta[c] || {}).group || 'other') === id).sort(byOrder);
-    if (!inGroup.length) continue;
-    const h = document.createElement('div');
-    h.className = 'pnl-group-title';
-    h.textContent = title;
-    grid.appendChild(h);
-    appendRateCards(grid, inGroup, eltoqueRates, meta);
-  }
-
-  if (reference.length) {
-    const details = document.createElement('details');
-    details.id = 'eltoqueMore';
-    details.className = 'pnl-more';
-    const summary = document.createElement('summary');
-    summary.textContent = `Mostrar m\u00e1s (${reference.length})`;
-    const refGrid = document.createElement('div');
-    refGrid.className = 'rgrid';
-    details.append(summary, refGrid);
-    appendRateCards(refGrid, reference, eltoqueRates, meta);
-    grid.insertAdjacentElement('afterend', details);
-  }
-
-  setPanelTime('eltoqueUpd');
-}
-
-function renderBccPanel(bccRates) {
-  renderCurrencyPanel('bccGrid', 'bccUpd', bccRates, 'Sin datos del BCC por ahora');
-}
-
-// ═══════════════════════════════════════════════
-//  QvaPay P2P (guardado por background.js desde /tasas/latest → qvapay)
-//  Las claves son MÉTODOS DE PAGO, no monedas: cada valor es cuánto de ese
-//  método se obtiene por 1 USD de QvaPay. Se muestran TODOS los que traiga
-//  la API (los que no tienen operaciones recientes no vienen).
-// ═══════════════════════════════════════════════
-const QVAPAY_ORDER = ['CUP', 'MLC', 'TROPIPAY', 'ETECSA', 'ZELLE', 'CLASICA', 'BOLSATM', 'BANDECPREPAGO', 'SBERBANK'];
-const QVAPAY_META = {
-  CUP:           { name: 'Banco CUP',      short: 'CUP',    icon: '🏦' },
-  MLC:           { name: 'Banco MLC',      short: 'MLC',    icon: '💳' },
-  TROPIPAY:      { name: 'Tropipay',       short: 'TPAY',   icon: '💸' },
-  ETECSA:        { name: 'Saldo ETECSA',   short: 'ETECSA', icon: '📱' },
-  ZELLE:         { name: 'Zelle',          short: 'ZELLE',  icon: '⚡' },
-  CLASICA:       { name: 'Tarjeta Clásica', short: 'CLÁS',  icon: '💳' },
-  BOLSATM:       { name: 'Bolsa TM',       short: 'BOLSA',  icon: '👛' },
-  BANDECPREPAGO: { name: 'Bandec Prepago', short: 'BPREP',  icon: '💳' },
-  SBERBANK:      { name: 'Sberbank',       short: 'SBER',   icon: '🏦' },
-};
-
-function renderQvapayPanel(qvapayRates) {
-  const grid = document.getElementById('qvapayGrid');
-  if (!grid) return;
-
-  const codes = sortCodes(
-    Object.keys(qvapayRates).filter(code => qvapayRates[code] && typeof qvapayRates[code].rate === 'number'),
-    QVAPAY_ORDER
-  );
-
-  grid.textContent = '';
-
-  if (!codes.length) {
-    showPanelEmpty(grid, 'Sin datos de QvaPay por ahora');
-  } else {
-    for (const code of codes) {
-      const meta = QVAPAY_META[code] || { name: code, short: code, icon: '💱' };
-      grid.appendChild(createQvapayCard(qvapayRates[code], meta));
-    }
-  }
-
-  setPanelTime('qvapayUpd');
-}
-
-// Los valores de QvaPay pueden ser < 10 (Zelle ≈ 1.04, Tropipay ≈ 0.91):
-// con formatRate saldrían como "1.0", así que ahí se usan 2 decimales.
-function formatQv(value) {
-  return value < 10 ? value.toFixed(2) : formatRate(value);
-}
-
-function createQvapayCard(info, meta) {
-  const change = info.change || 'neutral';
-  const card = document.createElement('div');
-  card.className = `rcard ${change}`;
-
-  const arrow = change === 'up' ? '▲' : change === 'down' ? '▼' : '—';
-  const arrowLabel = change === 'up' ? 'Sube' : change === 'down' ? 'Baja' : 'Sin cambio';
-  const valueText = formatQv(info.rate);
-
-  const top = document.createElement('div'); top.className = 'rcard-top';
-  const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = meta.short;
-  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.textContent = meta.icon;
-  ico.setAttribute('aria-hidden', 'true');
-  top.appendChild(sym); top.appendChild(ico);
-
-  const val = document.createElement('div');
-  val.className = 'rcard-val ' + getSizeClassForLength(valueText.length);
-  val.textContent = valueText;
-
-  const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = 'por 1 USD';
-
-  card.appendChild(top); card.appendChild(val); card.appendChild(unitEl);
-
-  // Compra / venta: dos trozos que no se parten por dentro; si no caben en la
-  // misma línea, la venta baja a la siguiente (mejor que cortar con "…").
-  const sides = [];
-  if (typeof info.buy === 'number') sides.push(`C ${formatQv(info.buy)}`);
-  if (typeof info.sell === 'number') sides.push(`V ${formatQv(info.sell)}`);
-  if (sides.length) {
-    const bs = document.createElement('div');
-    bs.className = 'rcard-bs';
-    bs.setAttribute('role', 'group');
-    bs.setAttribute('aria-label', 'Compra y venta');
-    for (const text of sides) {
-      const part = document.createElement('span');
-      part.textContent = text;
-      bs.appendChild(part);
-    }
-    card.appendChild(bs);
-  }
-
-  card.title = meta.name;
-
-  const bot = document.createElement('div'); bot.className = 'rcard-bot';
-  const name = document.createElement('span'); name.className = 'rcard-name'; name.textContent = meta.name;
-  const pct = document.createElement('span'); pct.className = 'rcard-pct'; pct.textContent = arrow;
-  pct.setAttribute('role', 'img'); pct.setAttribute('aria-label', arrowLabel);
-  bot.appendChild(name); bot.appendChild(pct);
-  card.appendChild(bot);
-
-  return card;
-}
-
-function createRateCard(currency, rate, change, meta, unit) {
-  const card = document.createElement('div');
-  card.className = `rcard ${change}`;
-
-  const sizeClass = getRateSizeClass(rate);
-  const arrow = change === 'up' ? '▲' : change === 'down' ? '▼' : '—';
-
-  const top = document.createElement('div'); top.className = 'rcard-top';
-  const sym = document.createElement('span'); sym.className = 'rcard-sym'; sym.textContent = currency;
-  const ico = document.createElement('span'); ico.className = 'rcard-ico'; ico.appendChild(createFlagNode(meta.flag, 15));
-  top.appendChild(sym); top.appendChild(ico);
-
-  const val = document.createElement('div'); val.className = 'rcard-val ' + sizeClass; val.textContent = formatRate(rate);
-  const unitEl = document.createElement('div'); unitEl.className = 'rcard-unit'; unitEl.textContent = unit;
-
-  const bot = document.createElement('div'); bot.className = 'rcard-bot';
-  const name = document.createElement('span'); name.className = 'rcard-name'; name.textContent = meta.name;
-  const pct = document.createElement('span'); pct.className = 'rcard-pct'; pct.textContent = arrow;
-  bot.appendChild(name); bot.appendChild(pct);
-
-  card.appendChild(top); card.appendChild(val); card.appendChild(unitEl); card.appendChild(bot);
-
-  return card;
-}
-
-function getRateSizeClass(rate) {
-  const len = formatRate(rate).length;
-  return getSizeClassForLength(len);
-}
-
-// Umbrales poco agresivos para que un rango tipo "380–420" mantenga el
-// mismo tamaño que una tasa normal (hay espacio de sobra en la tarjeta).
-function getSizeClassForLength(len) {
-  if (len >= 13) return 'sz7';
-  if (len >= 11) return 'sz6';
-  if (len >= 9) return 'sz5';
-  return 'sz4';
-}
-
-function formatRate(rate) {
-  if (rate >= 1000000) return (rate / 1000000).toFixed(1) + 'M';
-  if (rate >= 100000) return Math.round(rate / 1000) + 'k';
-  if (rate >= 10000) return (rate / 1000).toFixed(1) + 'k';
-  if (rate >= 1000) return String(Math.round(rate));
-  return rate % 1 === 0 ? String(rate) : rate.toFixed(1);
 }
 
 function renderBinanceTicker() {
@@ -560,7 +190,6 @@ function renderBinanceTicker() {
   const zone = document.getElementById('tickerZone');
   if (!strip) return;
 
-  // Toggle general del ticker (gestión desde Opciones > Ticker)
   if (settings.tickerEnabled === false) {
     if (zone) zone.style.display = 'none';
     return;
@@ -568,29 +197,30 @@ function renderBinanceTicker() {
   if (zone) zone.style.display = '';
 
   const selected = settings.tickerCurrencies?.length ? settings.tickerCurrencies : DEFAULT_TICKER_CURRENCIES;
-  const currencies = selected.filter(cur => binanceRates[cur] !== undefined);
+  const currencies = selected.filter((cur) => binanceRates[cur] !== undefined);
   if (currencies.length === 0) return;
 
   function makeItem(cur, rate) {
-    const wrap = document.createElement('span'); wrap.className = 'ti bnc';
-    const src = document.createElement('span'); src.className = 'tsrc'; src.textContent = 'Binance';
-    const curEl = document.createElement('span'); curEl.className = 'tcur'; curEl.textContent = cur;
-    const valEl = document.createElement('span'); valEl.className = 'tval'; valEl.textContent = rate.toFixed(2);
-    const unitEl = document.createElement('span'); unitEl.className = 'tunit'; unitEl.textContent = 'USDT';
-    wrap.appendChild(src); wrap.appendChild(curEl); wrap.appendChild(valEl); wrap.appendChild(unitEl);
-    const sep = document.createElement('span'); sep.className = 'tsep'; sep.textContent = '·';
+    const wrap = document.createElement('span');
+    wrap.className = 'ti bnc';
+    for (const [cls, text] of [['tsrc', 'Binance'], ['tcur', cur], ['tval', rate.toFixed(2)], ['tunit', 'USDT']]) {
+      const el = document.createElement('span');
+      el.className = cls;
+      el.textContent = text;
+      wrap.appendChild(el);
+    }
+    const sep = document.createElement('span');
+    sep.className = 'tsep';
+    sep.textContent = '·';
     return [wrap, sep];
   }
 
-  // Duplicate for seamless loop, built entirely with DOM (no innerHTML)
   strip.textContent = '';
-  for (let pass = 0; pass < 2; pass++) {
-    for (const cur of currencies) {
-      makeItem(cur, binanceRates[cur]).forEach(el => strip.appendChild(el));
-    }
+  for (let pass = 0; pass < 2; pass++) { // duplicado para el bucle continuo
+    for (const cur of currencies) makeItem(cur, binanceRates[cur]).forEach((el) => strip.appendChild(el));
   }
 
-  // Duración de la animación, escalada por settings.scrollSpeed
+  // Duración escalada por settings.scrollSpeed (40 = velocidad base; mayor valor = más rápido)
   const speed = settings.scrollSpeed || 40;
   const totalChars = currencies.length * 20;
   const baseDuration = Math.max(20, totalChars * 0.5);
@@ -614,9 +244,5 @@ function setupRefresh() {
     });
   }
 
-  if (btnSettings) {
-    btnSettings.addEventListener('click', () => {
-      browser.runtime.openOptionsPage();
-    });
-  }
+  if (btnSettings) btnSettings.addEventListener('click', () => browser.runtime.openOptionsPage());
 }
