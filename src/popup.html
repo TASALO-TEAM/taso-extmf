@@ -6,7 +6,10 @@
   <title>TASALO — Tasas de Cambio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="theme-boot.js"></script>
   <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="palettes.css">
+  <link rel="stylesheet" href="rates-view.css">
 </head>
 <body>
   <div class="popup-wrap">
@@ -18,17 +21,6 @@
         <div class="brand-block">
           <span class="brand">TASALO</span>
         </div>
-      </div>
-      <!-- Source Switch -->
-      <div class="source-switch" id="sourceSwitch" title="Cambiar fuente de datos">
-        <button class="source-btn active" data-source="eltoque" title="El Toque (Mercado Informal)">
-          <span class="source-icon">🔵</span>
-          <span class="source-label">Toque</span>
-        </button>
-        <button class="source-btn" data-source="bcc" title="BCC (Mercado Oficial)">
-          <span class="source-icon">🟢</span>
-          <span class="source-label">BCC</span>
-        </button>
       </div>
       <div class="header-right">
         <span class="update-dot" id="updateDot" title="Estado API"></span>
@@ -55,13 +47,7 @@
     </div>
 
     <!-- Rates Grid -->
-    <div class="rates-section" id="ratesSection">
-      <div class="rates-loading" id="ratesLoading">
-        <div class="spinner"></div>
-        <span id="ratesLoadingText">Obteniendo tasas...</span>
-      </div>
-      <div class="rates-grid" id="ratesGrid" style="display:none"></div>
-    </div>
+    <div class="rates-section" id="ratesSection"></div>
 
     <!-- Ticker -->
     <div class="ticker-section" id="tickerSection">
@@ -92,7 +78,7 @@
     <footer class="footer">
       <span class="footer-source">
         <span class="footer-dot"></span>
-        TASALO — Tasas del mercado informal (No Oficial)
+        TASALO — Tasas referenciales de Cuba
       </span>
       <span class="footer-interval" id="footerInterval">—</span>
     </footer>

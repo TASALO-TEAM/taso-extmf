@@ -191,6 +191,8 @@ async function fetchRates() {
     // Extract rates per source (sin mezclar, cada fuente por separado)
     const eltoqueRates = parseSourceRates(data.data.eltoque || {});
     const eltoqueMeta  = parseSourceMeta(data.data.eltoque);
+    const eltoqueChanges = parseSourceChanges(data.data.eltoque);
+    const bccChanges   = parseSourceChanges(data.data.bcc);
     const bccRates     = parseSourceRates(data.data.bcc     || {});
     // QvaPay: métodos de pago P2P (no monedas). Se guarda aparte y no entra en
     // las tasas planas, porque "CUP"/"MLC" existen también como moneda.
@@ -214,6 +216,8 @@ async function fetchRates() {
       currentRates:  primaryRatesFlat,
       eltoqueRates,
       eltoqueMeta,
+      eltoqueChanges,
+      bccChanges,
       bccRates,
       qvapayRates,
       rateChanges:   changes,
@@ -361,6 +365,19 @@ function parseSourceMeta(sourceData) {
     };
   }
   return meta;
+}
+// Variacion por fuente tal como la calcula la API (frente a la lectura anterior de ESA fuente).
+// rateChanges se calcula en local y mezcla fuentes, asi que las tarjetas usan estas.
+function parseSourceChanges(sourceData) {
+  const changes = {};
+  const entries = Array.isArray(sourceData)
+    ? sourceData.map(item => [(item && (item.currency || item.code)) || '', item])
+    : (sourceData && typeof sourceData === 'object' ? Object.entries(sourceData) : []);
+  for (const [key, item] of entries) {
+    if (!item || typeof item !== 'object' || !key) continue;
+    if (item.change === 'up' || item.change === 'down' || item.change === 'neutral') changes[String(key).toUpperCase()] = item.change;
+  }
+  return changes;
 }
 function extractRateValue(item) {
   if (typeof item === 'number') return item;
